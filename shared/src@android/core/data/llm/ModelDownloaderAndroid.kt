@@ -1,108 +1,264 @@
 package de.franzsw.ctx2cal.core.data.llm
 
-import android.content.Context
 import android.app.DownloadManager
+import android.content.Context
 import android.database.Cursor
 import android.net.Uri
-import android.os.Build
 import android.os.Environment
+import android.os.StatFs
+import de.franzsw.ctx2cal.core.domain.download.DownloadErrorMapper
+import de.franzsw.ctx2cal.core.domain.model.ModelCatalogEntries
 import de.franzsw.ctx2cal.core.domain.model.ModelCandidate
 import de.franzsw.ctx2cal.core.domain.ports.DownloadProgress
 import de.franzsw.ctx2cal.core.domain.ports.ModelDownloader
+import de.franzsw.ctx2cal.core.domain.repository.SettingsRepository
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import java.io.File
 
 /**
  * DownloadManager-based `.litertlm` download into internal storage
- * (`filesDir/models/model.litertlm`), with progress polling and a size check.
- * DownloadManager is the platform-standard path (vs. the app HTTP stack).
+ * (`filesDir/models/model.litertlm`), with progress polling, cancellation,
+ * free-space check, atomic copy on [Dispatchers.IO], and size validation.
  */
-class ModelDownloaderAndroid(private val context: Context) : ModelDownloader {
+class ModelDownloaderAndroid(
+    private val context: Context,
+    private val settings: SettingsRepository? = null,
+) : ModelDownloader {
 
     private val manager: DownloadManager
         get() = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
 
     override fun downloadedModelPath(): String? {
         val f = modelFile()
-        return if (f.isFile && f.length() > 0) f.absolutePath else null
+        return if (f.isFile && f.length() > 0L) f.absolutePath else null
     }
 
     fun modelFile(): File = File(context.filesDir, "models/$MODEL_FILENAME")
 
-    override fun download(candidate: ModelCandidate): Flow<DownloadProgress> = flow {
-        val dest = modelFile()
-        dest.parentFile?.mkdirs()
-        val request = DownloadManager.Request(Uri.parse(candidate.url))
-            .setTitle(candidate.name)
-            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setMimeType("application/octet-stream")
-            .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, MODEL_FILENAME)
-        val id = try {
-            manager.enqueue(request)
-        } catch (e: Exception) {
-            emit(DownloadProgress.Failed("Download failed to start: ${e.message}"))
-            return@flow
-        }
-        var lastBytes = -1L
-        while (true) {
-            val (status, received, total) = query(id)
-            if (status == DownloadManager.STATUS_SUCCESSFUL) {
-                // Move from the public Downloads staging file into internal storage.
-                val staging = stagedFile()
-                if (staging.isFile) {
-                    staging.copyTo(dest, overwrite = true)
-                    staging.delete()
-                }
-                val path = dest.absolutePath
-                if (candidate.approxSizeBytes != null && dest.length() < candidate.approxSizeBytes * 0.5) {
-                    emit(DownloadProgress.Failed("Downloaded model looks truncated (${dest.length()} bytes)"))
-                } else {
-                    emit(DownloadProgress.Done(path))
-                }
-                return@flow
-            }
-            if (status == DownloadManager.STATUS_FAILED) {
-                emit(DownloadProgress.Failed("Model download failed"))
-                return@flow
-            }
-            if (received != lastBytes) {
-                emit(DownloadProgress.Running(received.takeIf { it >= 0 }, total.takeIf { it > 0 }))
-                lastBytes = received
-            }
-            delay(400)
+    override fun cancelDownload() {
+        val activeId = settings?.activeDownloadId() ?: return
+        try {
+            manager.remove(activeId)
+        } catch (_: Exception) {
+            // Best-effort cancel
+        } finally {
+            settings.setActiveDownloadId(null)
         }
     }
 
-    private fun stagedFile(): File = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), MODEL_FILENAME)
+    override fun deleteModel(): Boolean {
+        cancelDownload()
+        settings?.setModelPath(null)
+        val file = modelFile()
+        val deleted = !file.exists() || file.delete()
+        File(file.parentFile, "$MODEL_FILENAME.tmp").delete()
+        return deleted
+    }
 
-    private fun query(id: Long): Triple<Int, Long, Long> {
+    override fun download(candidate: ModelCandidate): Flow<DownloadProgress> = flow {
+        val dest = modelFile()
+        val destDir = dest.parentFile
+        if (destDir != null && !destDir.exists()) {
+            destDir.mkdirs()
+        }
+
+        val extDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+        if (extDir == null) {
+            emit(DownloadProgress.Failed("External storage is unavailable for staging the download."))
+            return@flow
+        }
+
+        // Reuse an in-progress DownloadManager entry if one is already running.
+        val existingId = settings?.activeDownloadId()
+        val existingQuery = existingId?.let { query(it) }
+        val id: Long = if (
+            existingId != null &&
+            existingQuery != null &&
+            existingQuery.status in setOf(
+                DownloadManager.STATUS_PENDING,
+                DownloadManager.STATUS_RUNNING,
+                DownloadManager.STATUS_PAUSED,
+                DownloadManager.STATUS_SUCCESSFUL,
+            )
+        ) {
+            existingId
+        } else {
+            settings?.setActiveDownloadId(null)
+            // Verify free disk space (needs room for both staging and internal copy).
+            val neededBytes = candidate.approxSizeBytes
+            if (neededBytes != null && neededBytes > 0L) {
+                val internalFree = availableBytes(context.filesDir)
+                val externalFree = availableBytes(extDir)
+                val requiredEach = (neededBytes * 1.15).toLong()
+                if (internalFree < requiredEach || externalFree < requiredEach) {
+                    val neededMb = (neededBytes / 1_000_000L) * 2
+                    emit(DownloadProgress.Failed("Not enough free storage space (need ~${neededMb} MB free)."))
+                    return@flow
+                }
+            }
+
+            // Remove any leftover staged file so DownloadManager doesn't rename to model-1.litertlm.
+            File(extDir, MODEL_FILENAME).delete()
+
+            val enqueuedId = try {
+                val request = DownloadManager.Request(Uri.parse(candidate.url))
+                    .setTitle(candidate.name)
+                    .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    .setMimeType("application/octet-stream")
+                    .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, MODEL_FILENAME)
+                manager.enqueue(request)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emit(DownloadProgress.Failed("Download failed to start: ${e.message ?: "unknown error"}"))
+                return@flow
+            }
+            settings?.setActiveDownloadId(enqueuedId)
+            enqueuedId
+        }
+
+        var lastBytes = -2L
+        var lastStatus = -2
+        while (true) {
+            val info = query(id)
+            when (info.status) {
+                DownloadManager.STATUS_SUCCESSFUL -> {
+                    settings?.setActiveDownloadId(null)
+                    val staged = resolveStagedFile(info.localUri, extDir)
+                    if (staged == null || !staged.isFile) {
+                        emit(DownloadProgress.Failed("Downloaded file could not be located."))
+                        return@flow
+                    }
+                    val actualSize = staged.length()
+                    if (DownloadErrorMapper.isIncompleteDownload(actualSize, candidate.approxSizeBytes)) {
+                        staged.delete()
+                        emit(DownloadProgress.Failed(DownloadErrorMapper.incompleteMessage(actualSize)))
+                        return@flow
+                    }
+                    // Atomic copy into internal storage so a partial copy never looks ready.
+                    val tmpDest = File(dest.parentFile, "$MODEL_FILENAME.tmp")
+                    try {
+                        staged.copyTo(tmpDest, overwrite = true)
+                        staged.delete()
+                        if (dest.exists()) dest.delete()
+                        if (!tmpDest.renameTo(dest)) {
+                            tmpDest.copyTo(dest, overwrite = true)
+                            tmpDest.delete()
+                        }
+                        emit(DownloadProgress.Done(dest.absolutePath))
+                    } catch (e: CancellationException) {
+                        tmpDest.delete()
+                        throw e
+                    } catch (e: Exception) {
+                        tmpDest.delete()
+                        emit(DownloadProgress.Failed("Failed to save downloaded model: ${e.message ?: "I/O error"}"))
+                    }
+                    return@flow
+                }
+                DownloadManager.STATUS_FAILED -> {
+                    settings?.setActiveDownloadId(null)
+                    emit(DownloadProgress.Failed(mapErrorReason(info.reason)))
+                    return@flow
+                }
+                DownloadManager.STATUS_PAUSED -> {
+                    if (info.status != lastStatus || info.receivedBytes != lastBytes) {
+                        emit(
+                            DownloadProgress.Paused(
+                                receivedBytes = info.receivedBytes.takeIf { it >= 0L },
+                                totalBytes = info.totalBytes.takeIf { it > 0L },
+                                reason = mapPauseReason(info.reason),
+                            )
+                        )
+                        lastStatus = info.status
+                        lastBytes = info.receivedBytes
+                    }
+                }
+                DownloadManager.STATUS_PENDING,
+                DownloadManager.STATUS_RUNNING -> {
+                    if (info.status != lastStatus || info.receivedBytes != lastBytes) {
+                        emit(
+                            DownloadProgress.Running(
+                                receivedBytes = info.receivedBytes.takeIf { it >= 0L },
+                                totalBytes = info.totalBytes.takeIf { it > 0L },
+                            )
+                        )
+                        lastStatus = info.status
+                        lastBytes = info.receivedBytes
+                    }
+                }
+                else -> {
+                    // Cursor empty / removed externally (e.g. cancelled in notification shade).
+                    settings?.setActiveDownloadId(null)
+                    emit(DownloadProgress.Cancelled)
+                    return@flow
+                }
+            }
+            delay(400)
+        }
+    }.flowOn(Dispatchers.IO)
+
+    private fun resolveStagedFile(localUri: String?, extDir: File): File? {
+        if (!localUri.isNullOrBlank()) {
+            val path = Uri.parse(localUri).path
+            if (!path.isNullOrBlank()) {
+                val fromUri = File(path)
+                if (fromUri.isFile) return fromUri
+            }
+        }
+        val fallback = File(extDir, MODEL_FILENAME)
+        return if (fallback.isFile) fallback else null
+    }
+
+    private fun availableBytes(dir: File): Long = try {
+        StatFs(dir.absolutePath).availableBytes
+    } catch (_: Exception) {
+        Long.MAX_VALUE
+    }
+
+    private data class QueryResult(
+        val status: Int,
+        val receivedBytes: Long,
+        val totalBytes: Long,
+        val reason: Int,
+        val localUri: String?,
+    )
+
+    private fun query(id: Long): QueryResult {
         val cursor: Cursor? = manager.query(DownloadManager.Query().setFilterById(id))
         return try {
             if (cursor != null && cursor.moveToFirst()) {
-                Triple(
-                    cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)),
-                    cursor.getLong(cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)),
-                    cursor.getLong(cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)),
+                val statusIdx = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                val receivedIdx = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+                val totalIdx = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+                val reasonIdx = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
+                val uriIdx = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+                QueryResult(
+                    status = if (statusIdx >= 0) cursor.getInt(statusIdx) else -1,
+                    receivedBytes = if (receivedIdx >= 0) cursor.getLong(receivedIdx) else -1L,
+                    totalBytes = if (totalIdx >= 0) cursor.getLong(totalIdx) else -1L,
+                    reason = if (reasonIdx >= 0) cursor.getInt(reasonIdx) else 0,
+                    localUri = if (uriIdx >= 0) cursor.getString(uriIdx) else null,
                 )
             } else {
-                Triple(-1, -1, -1)
+                QueryResult(-1, -1L, -1L, 0, null)
             }
         } finally {
             cursor?.close()
         }
     }
 
+    private fun mapErrorReason(reason: Int): String = DownloadErrorMapper.errorMessage(reason)
+
+    private fun mapPauseReason(reason: Int): String = DownloadErrorMapper.pauseMessage(reason)
+
     companion object {
         const val MODEL_FILENAME = "model.litertlm"
-        @Suppress("DEPRECATION")
-        fun candidate(): ModelCandidate = ModelCandidate(
-            // Placeholder asset until the v1 default model/repo is fixed (design open question);
-            // see README "Which model" note. Qwen3-0.6B-class small model preferred.
-            name = "Qwen3 0.6B (.litertlm)",
-            url = "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm",
-            approxSizeBytes = 380_000_000L,
-        )
+
+        fun candidate(): ModelCandidate = ModelCatalogEntries.QWEN3_0_6B_INT4
     }
 }

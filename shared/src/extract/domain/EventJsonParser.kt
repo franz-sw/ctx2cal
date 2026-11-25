@@ -1,10 +1,12 @@
 package de.franzsw.ctx2cal.extract.domain
 
 import de.franzsw.ctx2cal.core.domain.model.CalendarEventDraft
+import de.franzsw.ctx2cal.core.domain.model.IsoDateTime
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Strict single-event JSON contract produced by the on-device model.
@@ -19,6 +21,7 @@ import kotlinx.serialization.json.jsonPrimitive
 object EventJsonParser {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+    private val FENCE_RE = Regex("""```(?:json)?\s*\r?\n([\s\S]*?)```""", RegexOption.IGNORE_CASE)
 
     sealed interface Parsed {
         data class Event(val draft: CalendarEventDraft) : Parsed
@@ -28,50 +31,85 @@ object EventJsonParser {
 
     /** Strips Markdown code fences / surrounding prose around the JSON object. */
     fun unwrap(raw: String): String {
-        var s = raw.trim()
-        if (s.startsWith("```")) {
-            val nl = s.indexOf('\n')
-            if (nl >= 0) s = s.substring(nl + 1)
-            if (s.endsWith("```")) s = s.substring(0, s.length - 3).trim()
+        val trimmed = raw.trim()
+        val fenced = FENCE_RE.find(trimmed)?.groupValues?.get(1)?.trim()
+        val candidate = fenced ?: trimmed
+        val start = candidate.indexOf('{')
+        if (start < 0) return candidate
+        // Find matching closing brace while respecting JSON strings/escapes.
+        var depth = 0
+        var inString = false
+        var escaped = false
+        for (i in start until candidate.length) {
+            val c = candidate[i]
+            if (inString) {
+                if (escaped) {
+                    escaped = false
+                } else if (c == '\\') {
+                    escaped = true
+                } else if (c == '"') {
+                    inString = false
+                }
+            } else {
+                when (c) {
+                    '"' -> inString = true
+                    '{' -> depth++
+                    '}' -> {
+                        depth--
+                        if (depth == 0) return candidate.substring(start, i + 1)
+                    }
+                }
+            }
         }
-        val start = s.indexOf('{')
-        val end = s.lastIndexOf('}')
-        return if (start >= 0 && end > start) s.substring(start, end + 1) else s
+        val end = candidate.lastIndexOf('}')
+        return if (end > start) candidate.substring(start, end + 1) else candidate
     }
 
     fun parse(raw: String): Parsed {
         val element = try {
             json.parseToJsonElement(unwrap(raw))
         } catch (e: Exception) {
-            return Parsed.Invalid("Malformed JSON: ${e.message}")
+            return Parsed.Invalid("Malformed JSON: ${e.message ?: "unexpected format"}")
         }
-        if (element !is kotlinx.serialization.json.JsonObject) {
-            return Parsed.Invalid("Expected a JSON object")
-        }
-        val obj = element.jsonObject
-        if (obj["noEvent"]?.jsonPrimitive?.let { it !is JsonNull && it.content == "true" } == true) {
+        val obj = element as? JsonObject
+            ?: return Parsed.Invalid("Expected a JSON object")
+
+        if (obj["noEvent"].primitiveContent()?.equals("true", ignoreCase = true) == true) {
             return Parsed.NoEvent
         }
-        val title = obj["title"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.content?.trim() ?: ""
+
+        // Non-primitive (object/array) values for scalar fields are invalid, never coerced.
+        for (field in listOf("title", "start", "end", "allDay", "description", "location")) {
+            val el = obj[field]
+            if (el != null && el !is JsonNull && el !is JsonPrimitive) {
+                return Parsed.Invalid("Invalid $field: expected a primitive value")
+            }
+        }
+
+        val title = obj["title"].primitiveContent()?.trim() ?: ""
         if (title.isBlank()) return Parsed.Invalid("Missing title")
 
-        val startRaw = obj["start"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.content?.trim() ?: ""
-        val endRaw = obj["end"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.content?.trim() ?: ""
-        if (!de.franzsw.ctx2cal.core.domain.model.IsoDateTime.isValid(startRaw)) {
+        val startRaw = obj["start"].primitiveContent()?.trim() ?: ""
+        val endRaw = obj["end"].primitiveContent()?.trim() ?: ""
+        if (!IsoDateTime.isValid(startRaw)) {
             return Parsed.Invalid("Missing or invalid start: $startRaw")
         }
-        if (!de.franzsw.ctx2cal.core.domain.model.IsoDateTime.isValid(endRaw)) {
+        if (!IsoDateTime.isValid(endRaw)) {
             return Parsed.Invalid("Missing or invalid end: $endRaw")
         }
-        val allDay = obj["allDay"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.content?.trim()
-            ?.let { it.equals("true", true) } ?: false
-        val description = obj["description"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.content ?: ""
-        val location = obj["location"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.content ?: ""
+
+        val allDay = obj["allDay"].primitiveContent()?.trim()
+            ?.equals("true", ignoreCase = true) ?: false
+        val description = obj["description"].primitiveContent() ?: ""
+        val location = obj["location"].primitiveContent() ?: ""
+
+        val startNormalized = if (allDay) IsoDateTime.toDateOnly(startRaw) else IsoDateTime.normalize(startRaw)
+        val endNormalized = if (allDay) IsoDateTime.toDateOnly(endRaw) else IsoDateTime.normalize(endRaw)
 
         val draft = CalendarEventDraft(
             title = title,
-            startIso = de.franzsw.ctx2cal.core.domain.model.IsoDateTime.normalize(startRaw),
-            endIso = de.franzsw.ctx2cal.core.domain.model.IsoDateTime.normalize(endRaw),
+            startIso = startNormalized,
+            endIso = endNormalized,
             allDay = allDay,
             description = description,
             location = location,
@@ -79,11 +117,16 @@ object EventJsonParser {
         return draft.validationError()?.let { Parsed.Invalid(it) } ?: Parsed.Event(draft)
     }
 
+    private fun JsonElement?.primitiveContent(): String? {
+        if (this == null || this is JsonNull) return null
+        return (this as? JsonPrimitive)?.content
+    }
+
     /** Prompt sections shared by every on-device backend. */
     fun buildPrompt(text: String, todayIso: String, timeZoneId: String): String =
         """
         You extract exactly one calendar event from free text. Output ONLY a JSON object, no prose, no code fences.
-        Fields: title (string), start (ISO-8601 local datetime, e.g. 2026-11-25T10:00:00), end (ISO-8601 local datetime),
+        Fields: title (string), start (ISO-8601 local datetime, e.g. 2026-11-25T10:00:00, or YYYY-MM-DD if allDay is true), end (ISO-8601 local datetime or YYYY-MM-DD),
         allDay (boolean), description (string), location (string).
         If the text contains no event, output exactly: {"noEvent": true}
         Resolve relative dates ("next Friday", "tomorrow") against today.
@@ -92,11 +135,14 @@ object EventJsonParser {
         $text
         """.trimIndent()
 
-    /** Retry prompt served once after a validation failure. */
-    fun buildRetryPrompt(previousRaw: String, reason: String): String =
-        """
-        Your previous output was rejected: $reason. Output ONLY a corrected JSON object for the same event, no prose, no code fences.
-        Previous output:
-        ${previousRaw.take(500)}
-        """.trimIndent()
+    /** Retry prompt served once after a validation failure (includes original context for stateless models). */
+    fun buildRetryPrompt(previousRaw: String, reason: String, originalPrompt: String? = null): String = buildString {
+        if (!originalPrompt.isNullOrBlank()) {
+            appendLine(originalPrompt)
+            appendLine()
+        }
+        appendLine("Your previous output was rejected: $reason. Output ONLY a corrected JSON object for the same event, no prose, no code fences.")
+        appendLine("Previous output:")
+        append(previousRaw.take(500))
+    }
 }
