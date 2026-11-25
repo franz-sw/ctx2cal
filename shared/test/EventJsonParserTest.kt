@@ -1,6 +1,6 @@
 package de.franzsw.ctx2cal
 
-import de.franzsw.ctx2cal.domain.extraction.EventJsonParser
+import de.franzsw.ctx2cal.extract.domain.EventJsonParser
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
