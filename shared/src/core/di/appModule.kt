@@ -8,6 +8,6 @@ import org.koin.dsl.module
 
 /** Shared application module: ViewModels over the platform-provided ports. */
 val appModule: Module = module {
-    viewModel { ExtractViewModel(get(), get(), get()) }
+    viewModel { ExtractViewModel(get(), get(), get(), get(), get()) }
     viewModel { ModelSetupViewModel(get(), get(), get()) }
 }

@@ -7,8 +7,8 @@ import android.net.Uri
 import android.os.Environment
 import android.os.StatFs
 import de.franzsw.ctx2cal.core.domain.download.DownloadErrorMapper
-import de.franzsw.ctx2cal.core.domain.model.ModelCatalogEntries
 import de.franzsw.ctx2cal.core.domain.model.ModelCandidate
+import de.franzsw.ctx2cal.core.domain.model.ModelCatalogEntries
 import de.franzsw.ctx2cal.core.domain.ports.DownloadProgress
 import de.franzsw.ctx2cal.core.domain.ports.ModelDownloader
 import de.franzsw.ctx2cal.core.domain.repository.SettingsRepository
@@ -21,9 +21,9 @@ import kotlinx.coroutines.flow.flowOn
 import java.io.File
 
 /**
- * DownloadManager-based `.litertlm` download into internal storage
- * (`filesDir/models/model.litertlm`), with progress polling, cancellation,
- * free-space check, atomic copy on [Dispatchers.IO], and size validation.
+ * DownloadManager-based `.litertlm` downloader storing each catalog model independently
+ * under `filesDir/models/<candidate.id>.litertlm`, with per-model progress tracking,
+ * cancellation, 1.15x free-space checks, atomic copy on [Dispatchers.IO], and size validation.
  */
 class ModelDownloaderAndroid(
     private val context: Context,
@@ -33,35 +33,105 @@ class ModelDownloaderAndroid(
     private val manager: DownloadManager
         get() = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
 
-    override fun downloadedModelPath(): String? {
-        val f = modelFile()
-        return if (f.isFile && f.length() > 0L) f.absolutePath else null
+    private fun modelsDir(): File = File(context.filesDir, "models")
+
+    fun modelFile(modelId: String): File = File(modelsDir(), "$modelId.litertlm")
+
+    private fun cleanupLegacyModel() {
+        val dir = modelsDir()
+        dir.listFiles()?.forEach { file ->
+            if (file.name == LEGACY_MODEL_FILENAME ||
+                file.name == "$LEGACY_MODEL_FILENAME.tmp" ||
+                file.name.startsWith("${LEGACY_MODEL_FILENAME}_")
+            ) {
+                file.delete()
+            }
+        }
+        val savedPath = settings?.modelPath()
+        if (savedPath != null && savedPath.endsWith("/$LEGACY_MODEL_FILENAME")) {
+            settings.setModelPath(null)
+        }
     }
 
-    fun modelFile(): File = File(context.filesDir, "models/$MODEL_FILENAME")
+    override fun downloadedModelPath(): String? {
+        val activeId = settings?.activeModelId()
+        if (activeId != null && activeId != ModelCatalogEntries.NANO_MODEL_ID) {
+            downloadedModelPath(activeId)?.let { return it }
+        }
+        return downloadedModelPaths().values.firstOrNull()
+    }
+
+    override fun downloadedModelPath(modelId: String): String? {
+        cleanupLegacyModel()
+        val file = modelFile(modelId)
+        return if (file.isFile && file.length() > 0L) file.absolutePath else null
+    }
+
+    override fun downloadedModelPaths(): Map<String, String> {
+        cleanupLegacyModel()
+        val result = linkedMapOf<String, String>()
+        for (candidate in ModelCatalogEntries.all) {
+            val file = modelFile(candidate.id)
+            if (file.isFile && file.length() > 0L) {
+                result[candidate.id] = file.absolutePath
+            }
+        }
+        return result
+    }
 
     override fun cancelDownload() {
-        val activeId = settings?.activeDownloadId() ?: return
-        try {
-            manager.remove(activeId)
-        } catch (_: Exception) {
-            // Best-effort cancel
-        } finally {
-            settings.setActiveDownloadId(null)
+        val activeId = settings?.activeDownloadId()
+        if (activeId != null) {
+            try {
+                manager.remove(activeId)
+            } catch (_: Exception) {
+                // Best-effort cancel
+            }
         }
+        settings?.setActiveDownloadId(null)
+        settings?.setActiveDownloadModelId(null)
     }
 
     override fun deleteModel(): Boolean {
         cancelDownload()
+        cleanupLegacyModel()
         settings?.setModelPath(null)
-        val file = modelFile()
+        if (settings?.activeModelId() != ModelCatalogEntries.NANO_MODEL_ID) {
+            settings?.setActiveModelId(null)
+        }
+        var allDeleted = true
+        val dir = modelsDir()
+        dir.listFiles()?.forEach { file ->
+            if (file.name.endsWith(".litertlm") || file.name.endsWith(".litertlm.tmp")) {
+                if (!file.delete()) allDeleted = false
+            }
+        }
+        return allDeleted
+    }
+
+    override fun deleteModel(modelId: String): Boolean {
+        if (settings?.activeDownloadModelId() == modelId) {
+            cancelDownload()
+        }
+        cleanupLegacyModel()
+        val file = modelFile(modelId)
         val deleted = !file.exists() || file.delete()
-        File(file.parentFile, "$MODEL_FILENAME.tmp").delete()
+        File(modelsDir(), "${modelId}.litertlm.tmp").delete()
+        modelsDir().listFiles()?.forEach { extra ->
+            if (extra.name.startsWith("${modelId}.litertlm_")) extra.delete()
+        }
+        if (settings?.modelPath() == file.absolutePath) {
+            settings.setModelPath(null)
+        }
+        if (settings?.activeModelId() == modelId) {
+            settings.setActiveModelId(null)
+        }
         return deleted
     }
 
     override fun download(candidate: ModelCandidate): Flow<DownloadProgress> = flow {
-        val dest = modelFile()
+        cleanupLegacyModel()
+        val dest = modelFile(candidate.id)
         val destDir = dest.parentFile
         if (destDir != null && !destDir.exists()) {
             destDir.mkdirs()
@@ -73,9 +143,10 @@ class ModelDownloaderAndroid(
             return@flow
         }
 
-        // Reuse an in-progress DownloadManager entry if one is already running.
+        val stagingName = candidate.localFileName
         val existingId = settings?.activeDownloadId()
-        val existingQuery = existingId?.let { query(it) }
+        val existingModelId = settings?.activeDownloadModelId()
+        val existingQuery = if (existingId != null && existingModelId == candidate.id) query(existingId) else null
         val id: Long = if (
             existingId != null &&
             existingQuery != null &&
@@ -88,29 +159,29 @@ class ModelDownloaderAndroid(
         ) {
             existingId
         } else {
-            settings?.setActiveDownloadId(null)
-            // Verify free disk space (needs room for both staging and internal copy).
+            if (existingId != null) {
+                cancelDownload()
+            }
             val neededBytes = candidate.approxSizeBytes
             if (neededBytes != null && neededBytes > 0L) {
                 val internalFree = availableBytes(context.filesDir)
                 val externalFree = availableBytes(extDir)
                 val requiredEach = (neededBytes * 1.15).toLong()
                 if (internalFree < requiredEach || externalFree < requiredEach) {
-                    val neededMb = (neededBytes / 1_000_000L) * 2
+                    val neededMb = (requiredEach / 1_000_000L)
                     emit(DownloadProgress.Failed("Not enough free storage space (need ~${neededMb} MB free)."))
                     return@flow
                 }
             }
 
-            // Remove any leftover staged file so DownloadManager doesn't rename to model-1.litertlm.
-            File(extDir, MODEL_FILENAME).delete()
+            File(extDir, stagingName).delete()
 
             val enqueuedId = try {
                 val request = DownloadManager.Request(Uri.parse(candidate.url))
                     .setTitle(candidate.name)
                     .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                     .setMimeType("application/octet-stream")
-                    .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, MODEL_FILENAME)
+                    .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, stagingName)
                 manager.enqueue(request)
             } catch (e: CancellationException) {
                 throw e
@@ -119,6 +190,7 @@ class ModelDownloaderAndroid(
                 return@flow
             }
             settings?.setActiveDownloadId(enqueuedId)
+            settings?.setActiveDownloadModelId(candidate.id)
             enqueuedId
         }
 
@@ -129,7 +201,8 @@ class ModelDownloaderAndroid(
             when (info.status) {
                 DownloadManager.STATUS_SUCCESSFUL -> {
                     settings?.setActiveDownloadId(null)
-                    val staged = resolveStagedFile(info.localUri, extDir)
+                    settings?.setActiveDownloadModelId(null)
+                    val staged = resolveStagedFile(info.localUri, extDir, stagingName)
                     if (staged == null || !staged.isFile) {
                         emit(DownloadProgress.Failed("Downloaded file could not be located."))
                         return@flow
@@ -140,8 +213,7 @@ class ModelDownloaderAndroid(
                         emit(DownloadProgress.Failed(DownloadErrorMapper.incompleteMessage(actualSize)))
                         return@flow
                     }
-                    // Atomic copy into internal storage so a partial copy never looks ready.
-                    val tmpDest = File(dest.parentFile, "$MODEL_FILENAME.tmp")
+                    val tmpDest = File(dest.parentFile, "$stagingName.tmp")
                     try {
                         staged.copyTo(tmpDest, overwrite = true)
                         staged.delete()
@@ -162,6 +234,7 @@ class ModelDownloaderAndroid(
                 }
                 DownloadManager.STATUS_FAILED -> {
                     settings?.setActiveDownloadId(null)
+                    settings?.setActiveDownloadModelId(null)
                     emit(DownloadProgress.Failed(mapErrorReason(info.reason)))
                     return@flow
                 }
@@ -192,8 +265,8 @@ class ModelDownloaderAndroid(
                     }
                 }
                 else -> {
-                    // Cursor empty / removed externally (e.g. cancelled in notification shade).
                     settings?.setActiveDownloadId(null)
+                    settings?.setActiveDownloadModelId(null)
                     emit(DownloadProgress.Cancelled)
                     return@flow
                 }
@@ -202,7 +275,7 @@ class ModelDownloaderAndroid(
         }
     }.flowOn(Dispatchers.IO)
 
-    private fun resolveStagedFile(localUri: String?, extDir: File): File? {
+    private fun resolveStagedFile(localUri: String?, extDir: File, stagingName: String): File? {
         if (!localUri.isNullOrBlank()) {
             val path = Uri.parse(localUri).path
             if (!path.isNullOrBlank()) {
@@ -210,7 +283,7 @@ class ModelDownloaderAndroid(
                 if (fromUri.isFile) return fromUri
             }
         }
-        val fallback = File(extDir, MODEL_FILENAME)
+        val fallback = File(extDir, stagingName)
         return if (fallback.isFile) fallback else null
     }
 
@@ -257,7 +330,7 @@ class ModelDownloaderAndroid(
     private fun mapPauseReason(reason: Int): String = DownloadErrorMapper.pauseMessage(reason)
 
     companion object {
-        const val MODEL_FILENAME = "model.litertlm"
+        private const val LEGACY_MODEL_FILENAME = "model.litertlm"
 
         fun candidate(): ModelCandidate = ModelCatalogEntries.QWEN3_0_6B_INT4
     }

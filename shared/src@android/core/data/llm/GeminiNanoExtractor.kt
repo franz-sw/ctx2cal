@@ -1,18 +1,25 @@
 package de.franzsw.ctx2cal.core.data.llm
 
-import de.franzsw.ctx2cal.extract.domain.EventJsonParser
+import com.google.mlkit.genai.common.FeatureStatus
+import com.google.mlkit.genai.common.GenAiException
+import com.google.mlkit.genai.prompt.GenerateContentResponse
+import com.google.mlkit.genai.prompt.Generation
 import de.franzsw.ctx2cal.core.domain.model.ExtractionResult
 import de.franzsw.ctx2cal.core.domain.model.ModelStatus
 import de.franzsw.ctx2cal.core.domain.ports.EventExtractor
-import com.google.mlkit.genai.common.FeatureStatus
-import com.google.mlkit.genai.common.GenAiException
-import com.google.mlkit.genai.prompt.Generation
+import de.franzsw.ctx2cal.extract.domain.EventJsonParser
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 
 /**
  * Gemini Nano backend via ML Kit GenAI (AICore). Foreground-only: background-use
- * errors are mapped to a recoverable Failure, never thrown.
+ * errors and per-attempt timeouts are mapped to a recoverable Failure without retrying.
  */
-class GeminiNanoExtractor(override val backendName: String = "gemini-nano") : EventExtractor {
+class GeminiNanoExtractor(
+    private val attemptTimeoutMs: Long = DEFAULT_ATTEMPT_TIMEOUT_MS,
+    override val backendName: String = "gemini-nano",
+) : EventExtractor {
 
     suspend fun nanoStatus(): ModelStatus {
         val model = Generation.getClient()
@@ -23,7 +30,9 @@ class GeminiNanoExtractor(override val backendName: String = "gemini-nano") : Ev
                 FeatureStatus.DOWNLOADING -> ModelStatus.NanoDownloading
                 else -> ModelStatus.NanoUnavailable
             }
-        } catch (e: Exception) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
             ModelStatus.NanoUnavailable
         } finally {
             model.close()
@@ -34,20 +43,35 @@ class GeminiNanoExtractor(override val backendName: String = "gemini-nano") : Ev
         val model = Generation.getClient()
         try {
             if (model.checkStatus() != FeatureStatus.AVAILABLE) {
-                return ExtractionResult.Failure("Gemini Nano is not available on this device", isNoModel = true)
+                return ExtractionResult.Failure("Gemini Nano is not available on this device.", isNoModel = true)
             }
-            return extractWithRetry(model::generateContent, prompt)
+            return extractWithRetry(
+                generate = { input -> withTimeout(attemptTimeoutMs) { model.generateContent(input) } },
+                prompt = prompt,
+            )
+        } catch (_: TimeoutCancellationException) {
+            return ExtractionResult.Failure(
+                "Gemini Nano timed out after ${attemptTimeoutMs / 1000}s. Please retry.",
+                isNoModel = false,
+            )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: GenAiException) {
             return mapFailure(e)
         } catch (e: Exception) {
-            return ExtractionResult.Failure("Gemini Nano failed: ${e.message}", isNoModel = false)
+            val detail = e.message?.takeIf { it.isNotBlank() }
+            return ExtractionResult.Failure(
+                if (detail != null) "Gemini Nano couldn't process this text ($detail)."
+                else "Gemini Nano couldn't process this text. Please try again.",
+                isNoModel = false,
+            )
         } finally {
             model.close()
         }
     }
 
     private suspend fun extractWithRetry(
-        generate: suspend (String) -> com.google.mlkit.genai.prompt.GenerateContentResponse,
+        generate: suspend (String) -> GenerateContentResponse,
         prompt: String,
     ): ExtractionResult {
         val first = generate(prompt).candidates.firstOrNull()?.text ?: ""
@@ -55,25 +79,38 @@ class GeminiNanoExtractor(override val backendName: String = "gemini-nano") : Ev
             is EventJsonParser.Parsed.Event -> ExtractionResult.Success(parsed.draft)
             is EventJsonParser.Parsed.NoEvent -> ExtractionResult.NoEvent
             is EventJsonParser.Parsed.Invalid -> {
-                val second = generate(EventJsonParser.buildRetryPrompt(first, parsed.reason))
-                    .candidates.firstOrNull()?.text ?: ""
+                val retryPrompt = EventJsonParser.buildRetryPrompt(
+                    previousRaw = first,
+                    reason = parsed.reason,
+                    originalPrompt = prompt,
+                )
+                val second = generate(retryPrompt).candidates.firstOrNull()?.text ?: ""
                 when (val retry = EventJsonParser.parse(second)) {
                     is EventJsonParser.Parsed.Event -> ExtractionResult.Success(retry.draft)
                     is EventJsonParser.Parsed.NoEvent -> ExtractionResult.NoEvent
                     is EventJsonParser.Parsed.Invalid -> ExtractionResult.Failure(
-                        "Model output was invalid after retry: ${retry.reason}"
+                        "Couldn't extract a valid event from this text. Try simplifying the wording or adding a clearer date/time."
                     )
                 }
             }
         }
     }
 
-    private fun mapFailure(e: GenAiException): ExtractionResult =
-        if (e.errorCode == GenAiException.ErrorCode.BACKGROUND_USE_BLOCKED) {
-            ExtractionResult.Failure("Extraction runs in the foreground only — bring the app forward and retry.")
-        } else if (e.errorCode == GenAiException.ErrorCode.NOT_AVAILABLE) {
-            ExtractionResult.Failure("Gemini Nano is not available on this device", isNoModel = true)
-        } else {
-            ExtractionResult.Failure("Gemini Nano failed: ${e.message}")
+    private fun mapFailure(e: GenAiException): ExtractionResult = when (e.errorCode) {
+        GenAiException.ErrorCode.BACKGROUND_USE_BLOCKED ->
+            ExtractionResult.Failure("Extraction runs in the foreground only — keep the app open and retry.")
+        GenAiException.ErrorCode.NOT_AVAILABLE ->
+            ExtractionResult.Failure("Gemini Nano is not available on this device.", isNoModel = true)
+        else -> {
+            val detail = e.message?.takeIf { it.isNotBlank() }
+            ExtractionResult.Failure(
+                if (detail != null) "Gemini Nano failed ($detail). Please retry."
+                else "Gemini Nano failed to run. Please retry."
+            )
         }
+    }
+
+    companion object {
+        const val DEFAULT_ATTEMPT_TIMEOUT_MS = 45_000L
+    }
 }

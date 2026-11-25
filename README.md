@@ -42,20 +42,24 @@ ContextToCalendar turns a pasted text block into one editable calendar-event dra
 
 | Backend | Requirement |
 |---|---|
-| Gemini Nano (ML Kit GenAI / AICore) | Pixel-class device with AICore + RAM for the system model; Gemini Nano availability varies by device, OS, and RAM — the app never blocks on it. |
-| LiteRT-LM (downloaded `.litertlm`) | Any Android device with GPU (GPU backend, declared via manifest native libraries) + internet for the model download. |
-| iOS | Not supported in v1 — the UI degrades to a no-model error instead of crashing. |
+| Gemini Nano (ML Kit GenAI / AICore) | Supported Android devices with AICore + RAM for the system model; selected by default when available. |
+| LiteRT-LM (`.litertlm`) | 64-bit Android (`arm64-v8a` / `x86_64`) with sufficient RAM and storage; uses GPU acceleration when supported and automatically caches CPU fallback on older GPUs. |
+| iOS | Not supported in v1 — the UI degrades cleanly to an unsupported state. |
 
-### Model download
+### Open-model catalog & hardware checks
 
-The fallback model is downloaded **once**, via `DownloadManager` (platform-standard path), into internal storage:
+The Setup screen evaluates device hardware (ABI, total RAM, free internal/external storage, Android SDK, SoC, and GLES/Vulkan GPU signals) before offering downloads from a curated **Apache-2.0 ungated** catalog on `litert-community`:
 
-- File: `filesDir/models/model.litertlm`
-- Default candidate: **Qwen3 0.6B** (`.litertlm`, from the `litert-community` Hugging Face repo) — a small model chosen over larger Gemma/Qwen variants to keep the download tractable; expect roughly **0.4 GB**.
-- Gated repos need a Hugging Face token — the current placeholder URL is **not** gated; fix the exact repo/URL before shipping (see "Open questions" below).
-- Progress is shown in the Setup screen; on completion the path + `litertlm` backend are persisted (SharedPreferences) and survive restart.
+| Model | File | Approx. size | Min RAM |
+|---|---|---|---|
+| **Qwen3 0.6B INT4** | `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` | ~343 MB | 4 GB |
+| **Qwen3 1.7B INT4** | `Qwen3-1.7B_dynamic_wi4b32_afp32.litertlm` | ~977 MB | 6 GB |
+| **Gemma 4 E2B** | `gemma-4-E2B-it.litertlm` | ~2.59 GB | 8 GB |
+| **Gemma 4 E4B** | `gemma-4-E4B-it.litertlm` | ~3.66 GB | 12 GB |
 
-> **Open question (from design):** which exact downloadable model + Hugging Face repo/token handling is the v1 default? The candidate URL in `ModelDownloaderAndroid.kt` is a placeholder; confirm + pin it before release.
+- **Storage**: Each model is downloaded via `DownloadManager` and stored independently at `filesDir/models/<id>.litertlm` so multiple models can be kept and switched (including switching back to Gemini Nano). Deleting a model requires confirmation in an alert dialog.
+- **Suitability badges**: Models are labeled `Recommended`, `CPU only · may be slow` (older GPUs/SoCs or cached GPU fallback), or `Incompatible` (download disabled when ABI/RAM/storage requirements are not met). When neither Gemini Nano nor a GPU-recommended model is available, Setup displays a top-level warning banner.
+- **Bounded inference**: LiteRT-LM runs through `Conversation` with model chat templates, disabled thinking tokens, deterministic sampling, capped input/context/output budgets, finite per-attempt timeouts, and native `cancelProcess()` on timeout or user cancellation.
 
 ### Why no Koog?
 

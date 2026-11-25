@@ -1,10 +1,16 @@
 package de.franzsw.ctx2cal.core.data.calendar
 
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.provider.CalendarContract
 import de.franzsw.ctx2cal.core.domain.model.CalendarEventDraft
+import de.franzsw.ctx2cal.core.domain.model.IsoDateTime
 import de.franzsw.ctx2cal.core.domain.ports.CalendarSharer
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.ZoneOffset
 
 /**
  * Share via the Calendar app's insert flow — the user picks the calendar app,
@@ -13,10 +19,17 @@ import de.franzsw.ctx2cal.core.domain.ports.CalendarSharer
 class AndroidCalendarSharer(private val context: Context) : CalendarSharer {
 
     override fun share(draft: CalendarEventDraft) {
-        val begin = epochMillis(draft.startIso)
-        val end = epochMillis(draft.endIso)
-        // Official ACTION_INSERT contract: data = Events.CONTENT_URI,
-        // times via CalendarContract extras, fields via Events columns.
+        shareWithResult(draft)
+    }
+
+    override fun shareWithResult(draft: CalendarEventDraft): String? {
+        draft.validationError()?.let { return it }
+        val (begin, end) = try {
+            resolveMillis(draft)
+        } catch (_: Exception) {
+            return "Invalid event date or time."
+        }
+
         val intent = Intent(Intent.ACTION_INSERT).apply {
             setData(CalendarContract.Events.CONTENT_URI)
             putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, begin)
@@ -27,22 +40,38 @@ class AndroidCalendarSharer(private val context: Context) : CalendarSharer {
             putExtra(CalendarContract.Events.EVENT_LOCATION, draft.location)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        context.startActivity(intent)
+        return try {
+            context.startActivity(intent)
+            null
+        } catch (_: ActivityNotFoundException) {
+            "No calendar app found on this device. You can download the .ics file instead."
+        } catch (e: Exception) {
+            "Could not open calendar app: ${e.message ?: "unknown error"}"
+        }
     }
 
-    /** Parses `YYYY-MM-DD` / `YYYY-MM-DDTHH:mm:ss` into epoch millis (device timezone). */
-    private fun epochMillis(iso: String): Long {
-        val v = iso.trim().replace(' ', 'T')
-        val date = v.substring(0, 10)
-        val time = v.substringAfter('T', "00:00:00")
-        val (y, m, d) = date.split("-").map { it.toInt() }
-        val parts = time.split(":").map { it.toIntOrNull() ?: 0 }
-        val hh = parts.getOrElse(0) { 0 }
-        val mm = parts.getOrElse(1) { 0 }
-        val ss = parts.getOrElse(2) { 0 }
-        return java.util.Calendar.getInstance().apply {
-            set(y, m - 1, d, hh, mm, ss)
-            set(java.util.Calendar.MILLISECOND, 0)
-        }.timeInMillis
+    private fun resolveMillis(draft: CalendarEventDraft): Pair<Long, Long> {
+        if (draft.allDay) {
+            // CalendarContract expects all-day begin/end at UTC midnight.
+            val startDate = LocalDate.parse(IsoDateTime.toDateOnly(draft.startIso))
+            val rawEndDate = LocalDate.parse(IsoDateTime.toDateOnly(draft.endIso))
+            val exclusiveEnd = if (!rawEndDate.isAfter(startDate)) startDate.plusDays(1) else rawEndDate
+            val beginMs = startDate.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+            val endMs = exclusiveEnd.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+            return beginMs to endMs
+        }
+        val zone = ZoneId.systemDefault()
+        val beginMs = parseLocalMillis(draft.startIso, zone)
+        val endMs = parseLocalMillis(draft.endIso, zone)
+        return beginMs to endMs
+    }
+
+    private fun parseLocalMillis(iso: String, zone: ZoneId): Long {
+        val norm = IsoDateTime.normalize(iso)
+        return if (IsoDateTime.isDateOnly(norm)) {
+            LocalDate.parse(norm).atStartOfDay(zone).toInstant().toEpochMilli()
+        } else {
+            LocalDateTime.parse(norm).atZone(zone).toInstant().toEpochMilli()
+        }
     }
 }

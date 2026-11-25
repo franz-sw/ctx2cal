@@ -20,6 +20,15 @@ import kotlinx.serialization.json.JsonPrimitive
  */
 object EventJsonParser {
 
+    const val MAX_INPUT_CHARS = 2000
+    const val MAX_RETRY_RAW_CHARS = 250
+    const val MAX_RETRY_ORIGINAL_CHARS = 2600
+
+    data class PromptParts(
+        val systemInstruction: String,
+        val userPrompt: String,
+    )
+
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val FENCE_RE = Regex("""```(?:json)?\s*\r?\n([\s\S]*?)```""", RegexOption.IGNORE_CASE)
 
@@ -122,27 +131,56 @@ object EventJsonParser {
         return (this as? JsonPrimitive)?.content
     }
 
-    /** Prompt sections shared by every on-device backend. */
-    fun buildPrompt(text: String, todayIso: String, timeZoneId: String): String =
+    fun boundInput(text: String): String = text.trim().take(MAX_INPUT_CHARS)
+
+    /** Concise system instruction with schema and one-shot JSON example for chat-templated models. */
+    fun buildSystemInstruction(): String =
         """
-        You extract exactly one calendar event from free text. Output ONLY a JSON object, no prose, no code fences.
-        Fields: title (string), start (ISO-8601 local datetime, e.g. 2026-11-25T10:00:00, or YYYY-MM-DD if allDay is true), end (ISO-8601 local datetime or YYYY-MM-DD),
-        allDay (boolean), description (string), location (string).
-        If the text contains no event, output exactly: {"noEvent": true}
-        Resolve relative dates ("next Friday", "tomorrow") against today.
-        Today is $todayIso in timezone $timeZoneId.
-        Text:
-        $text
+        You extract exactly one calendar event from text. Output ONLY a single JSON object and stop. No prose, no code fences, no thinking.
+        Schema: {"title":string,"start":"YYYY-MM-DDTHH:mm:ss" or "YYYY-MM-DD","end":"YYYY-MM-DDTHH:mm:ss" or "YYYY-MM-DD","allDay":boolean,"description":string,"location":string}
+        Example: {"title":"Dentist","start":"2026-11-26T14:30:00","end":"2026-11-26T15:30:00","allDay":false,"description":"","location":"Main St Clinic"}
+        If there is no event, output exactly: {"noEvent":true}
         """.trimIndent()
 
-    /** Retry prompt served once after a validation failure (includes original context for stateless models). */
+    /** Bounded user message containing date/timezone reference and truncated pasted text. */
+    fun buildUserPrompt(text: String, todayIso: String, timeZoneId: String): String =
+        """
+        Today is $todayIso in timezone $timeZoneId. Resolve relative dates against today.
+        Text:
+        ${boundInput(text)}
+        """.trimIndent()
+
+    fun buildPromptParts(text: String, todayIso: String, timeZoneId: String): PromptParts =
+        PromptParts(
+            systemInstruction = buildSystemInstruction(),
+            userPrompt = buildUserPrompt(text, todayIso, timeZoneId),
+        )
+
+    /** Combined prompt for single-string backends (e.g. Gemini Nano). */
+    fun buildPrompt(text: String, todayIso: String, timeZoneId: String): String {
+        val parts = buildPromptParts(text, todayIso, timeZoneId)
+        return "${parts.systemInstruction}\n\n${parts.userPrompt}"
+    }
+
+    /** Splits a combined [buildPrompt] output into separate system/user parts for Conversation sessions. */
+    fun splitForConversation(prompt: String): PromptParts {
+        val system = buildSystemInstruction()
+        val prefix = "$system\n\n"
+        val user = if (prompt.startsWith(prefix)) prompt.removePrefix(prefix) else prompt
+        return PromptParts(
+            systemInstruction = system,
+            userPrompt = user.take(MAX_INPUT_CHARS + 300),
+        )
+    }
+
+    /** Bounded retry prompt served once after a validation failure. */
     fun buildRetryPrompt(previousRaw: String, reason: String, originalPrompt: String? = null): String = buildString {
         if (!originalPrompt.isNullOrBlank()) {
-            appendLine(originalPrompt)
+            appendLine(originalPrompt.take(MAX_RETRY_ORIGINAL_CHARS))
             appendLine()
         }
         appendLine("Your previous output was rejected: $reason. Output ONLY a corrected JSON object for the same event, no prose, no code fences.")
         appendLine("Previous output:")
-        append(previousRaw.take(500))
+        append(previousRaw.trim().take(MAX_RETRY_RAW_CHARS))
     }
 }

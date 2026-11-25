@@ -1,9 +1,13 @@
 package de.franzsw.ctx2cal
 
 import de.franzsw.ctx2cal.core.domain.model.CalendarEventDraft
+import de.franzsw.ctx2cal.core.domain.model.CatalogModelState
 import de.franzsw.ctx2cal.core.domain.model.ExtractionResult
 import de.franzsw.ctx2cal.core.domain.model.ModelCandidate
+import de.franzsw.ctx2cal.core.domain.model.ModelCatalogEntries
+import de.franzsw.ctx2cal.core.domain.model.ModelCatalogSnapshot
 import de.franzsw.ctx2cal.core.domain.model.ModelStatus
+import de.franzsw.ctx2cal.core.domain.model.ModelSuitability
 import de.franzsw.ctx2cal.core.domain.ports.EventExtractor
 import de.franzsw.ctx2cal.core.domain.ports.ModelCatalog
 import de.franzsw.ctx2cal.core.domain.routing.ExtractorRouter
@@ -26,10 +30,31 @@ class ExtractorRouterTest {
         }
     }
 
-    private class FakeCatalog(var status: ModelStatus) : ModelCatalog {
+    private class FakeCatalog(
+        var status: ModelStatus,
+        var nanoStatusOverride: ModelStatus? = null,
+    ) : ModelCatalog {
         override suspend fun currentStatus(): ModelStatus = status
 
         override suspend fun availableCandidate(): ModelCandidate? = null
+
+        override suspend fun catalogSnapshot(): ModelCatalogSnapshot = ModelCatalogSnapshot(
+            nanoStatus = nanoStatusOverride ?: status,
+            models = listOf(
+                CatalogModelState(
+                    candidate = ModelCatalogEntries.QWEN3_0_6B_INT4,
+                    downloadedPath = (status as? ModelStatus.LiteRtReady)?.modelPath,
+                    isActive = status is ModelStatus.LiteRtReady,
+                    suitability = ModelSuitability.Recommended,
+                )
+            ),
+            activeModelId = when (status) {
+                is ModelStatus.NanoAvailable -> ModelCatalogEntries.NANO_MODEL_ID
+                is ModelStatus.LiteRtReady -> (status as? ModelStatus.LiteRtReady)?.modelId ?: ModelCatalogEntries.QWEN3_0_6B_INT4.id
+                else -> null
+            },
+            showNoAcceleratedWarning = false,
+        )
     }
 
     private val nanoDraft = CalendarEventDraft(
@@ -164,5 +189,39 @@ class ExtractorRouterTest {
         assertEquals(false, result.isNoModel)
         assertEquals(0, nano.calls)
         assertEquals(0, liteRt.calls)
+    }
+
+    @Test
+    fun `user-selected downloaded model is honored even when nano is available`() = runTest {
+        val nano = FakeExtractor("nano", ExtractionResult.Success(nanoDraft))
+        val liteRt = FakeExtractor("litertlm", ExtractionResult.Success(liteRtDraft))
+        val catalog = FakeCatalog(
+            status = ModelStatus.LiteRtReady("/data/qwen3-0.6b-int4.litertlm", "qwen3-0.6b-int4", "Qwen3 0.6B INT4"),
+            nanoStatusOverride = ModelStatus.NanoAvailable,
+        )
+        val router = ExtractorRouter(nano, liteRt, catalog)
+
+        val result = router.extract("prompt")
+        assertIs<ExtractionResult.Success>(result)
+        assertEquals("LiteRT event", result.draft.title)
+        assertEquals(0, nano.calls)
+        assertEquals(1, liteRt.calls)
+    }
+
+    @Test
+    fun `user-selected liteRT runtime failure falls back to available nano`() = runTest {
+        val nano = FakeExtractor("nano", ExtractionResult.Success(nanoDraft))
+        val liteRt = FakeExtractor("litertlm", ExtractionResult.Failure("litert boom", isNoModel = false))
+        val catalog = FakeCatalog(
+            status = ModelStatus.LiteRtReady("/data/qwen3-0.6b-int4.litertlm", "qwen3-0.6b-int4", "Qwen3 0.6B INT4"),
+            nanoStatusOverride = ModelStatus.NanoAvailable,
+        )
+        val router = ExtractorRouter(nano, liteRt, catalog)
+
+        val result = router.extract("prompt")
+        assertIs<ExtractionResult.Success>(result)
+        assertEquals("Nano event", result.draft.title)
+        assertEquals(1, liteRt.calls)
+        assertEquals(1, nano.calls)
     }
 }

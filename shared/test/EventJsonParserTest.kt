@@ -134,4 +134,38 @@ class EventJsonParserTest {
         assertTrue(withoutOriginal.contains("Malformed JSON"))
         assertTrue(!withoutOriginal.contains("Today is"))
     }
+
+    @Test
+    fun `oversized pasted text is truncated to MAX_INPUT_CHARS`() {
+        val oversized = "A".repeat(EventJsonParser.MAX_INPUT_CHARS + 500) + "TAIL_MARKER"
+        val userPrompt = EventJsonParser.buildUserPrompt(oversized, "2026-11-25", "UTC")
+        assertTrue(!userPrompt.contains("TAIL_MARKER"))
+        assertTrue(userPrompt.length <= EventJsonParser.MAX_INPUT_CHARS + 120)
+
+        val fullPrompt = EventJsonParser.buildPrompt(oversized, "2026-11-25", "UTC")
+        assertTrue(!fullPrompt.contains("TAIL_MARKER"))
+    }
+
+    @Test
+    fun `prompt parts include one-shot example and splitForConversation avoids duplicating system instruction`() {
+        val parts = EventJsonParser.buildPromptParts("Team lunch tomorrow 12:00", "2026-11-25", "Europe/Berlin")
+        assertTrue(parts.systemInstruction.contains("Example:"))
+        assertTrue(parts.systemInstruction.contains("Output ONLY"))
+        assertTrue(parts.userPrompt.contains("Team lunch tomorrow 12:00"))
+        assertTrue(!parts.userPrompt.contains("Example:"))
+
+        val combined = EventJsonParser.buildPrompt("Team lunch tomorrow 12:00", "2026-11-25", "Europe/Berlin")
+        val split = EventJsonParser.splitForConversation(combined)
+        assertEquals(parts.systemInstruction, split.systemInstruction)
+        assertEquals(parts.userPrompt, split.userPrompt)
+    }
+
+    @Test
+    fun `retry prompt bounds oversized previous output and original prompt`() {
+        val hugeRaw = "X".repeat(1000) + "RAW_END"
+        val hugeOriginal = "Y".repeat(5000) + "ORIG_END"
+        val retry = EventJsonParser.buildRetryPrompt(hugeRaw, "Malformed JSON", hugeOriginal)
+        assertTrue(!retry.contains("RAW_END"))
+        assertTrue(!retry.contains("ORIG_END"))
+    }
 }

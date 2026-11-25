@@ -23,14 +23,12 @@ fun LCHeadline(
         modifier = modifier
             .animateContentSize()
             .fillMaxWidth()
-            .padding(8.dp)
-            .padding(top = 8.dp)
+            .padding(vertical = 8.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Start,
-            modifier = modifier
-                .fillMaxWidth()
+            modifier = Modifier.fillMaxWidth()
         ) {
             Text(
                 text = name,

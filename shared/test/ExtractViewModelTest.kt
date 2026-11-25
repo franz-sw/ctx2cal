@@ -362,4 +362,24 @@ class ExtractViewModelTest {
         advanceUntilIdle()
         assertIs<ExtractUiState.Error>(vm2.state.value)
     }
+
+    @Test
+    fun `extraction timeout surfaces recoverable Error without retrying`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val extractor = FakeExtractor(ExtractionResult.Success(draft), gate = gate)
+        val vm = ExtractViewModel(
+            extractor = extractor,
+            sharer = FakeSharer(),
+            exporter = FakeExporter(),
+            catalog = null,
+            extractionTimeoutMs = 1_000L,
+        )
+        vm.onTextChange("Dentist at ten")
+        vm.onExtract()
+        advanceUntilIdle()
+        val err = assertIs<ExtractUiState.Error>(vm.state.value)
+        assertEquals(false, err.isNoModel)
+        assertEquals(1, extractor.calls)
+        assertEquals("Dentist at ten", err.inputText)
+    }
 }

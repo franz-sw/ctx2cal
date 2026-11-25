@@ -27,7 +27,6 @@ fun AppActionButton(
             containerColor = MaterialTheme.colorScheme.primary,
             contentColor = MaterialTheme.colorScheme.onPrimary
         ),
-//        shape = RoundedCornerShape(100f),
         modifier = modifier
             .height(IntrinsicSize.Min)
     ) {
@@ -38,17 +37,16 @@ fun AppActionButton(
                 .padding(vertical = innerPadding),
             contentAlignment = Alignment.Center
         ) {
-            CircularProgressIndicator(
-                modifier = Modifier
-                    .size(15.dp)
-                    .alpha(if (isLoading) 1f else 0f),
-                strokeWidth = 1.5.dp,
-                color = MaterialTheme.colorScheme.onPrimary
-            )
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
+            }
             Text(
                 text = text,
-                modifier = Modifier
-                    .alpha(if (isLoading) 0f else 1f),
+                modifier = Modifier.alpha(if (isLoading) 0f else 1f),
                 fontWeight = FontWeight.Medium
             )
         }
@@ -65,17 +63,22 @@ fun AppOutlinedActionButton(
     innerPadding: Dp = 8.dp,
     onClick: () -> Unit
 ) {
+    val isActive = enabled && !isLoading
+    val borderColor = if (isActive) {
+        MaterialTheme.colorScheme.outline
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
+    }
     OutlinedButton(
         onClick = onClick,
-        enabled = enabled,
+        enabled = isActive,
         colors = ButtonDefaults.outlinedButtonColors(
             contentColor = MaterialTheme.colorScheme.onBackground,
         ),
         border = BorderStroke(
-            width = 0.5.dp,
-            color = MaterialTheme.colorScheme.onBackground
+            width = 1.dp,
+            color = borderColor
         ),
-//        shape = RoundedCornerShape(100f),
         modifier = modifier
             .height(IntrinsicSize.Min)
     ) {
@@ -86,18 +89,17 @@ fun AppOutlinedActionButton(
                 .padding(vertical = innerPadding),
             contentAlignment = Alignment.Center
         ) {
-            CircularProgressIndicator(
-                modifier = Modifier
-                    .size(15.dp)
-                    .alpha(if (isLoading) 1f else 0f),
-                strokeWidth = 1.5.dp,
-                color = MaterialTheme.colorScheme.onBackground
-            )
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(2.dp),
-                modifier = Modifier
-                    .alpha(if (isLoading) 0f else 1f)
+                modifier = Modifier.alpha(if (isLoading) 0f else 1f)
             ) {
                 Text(
                     text = text,
