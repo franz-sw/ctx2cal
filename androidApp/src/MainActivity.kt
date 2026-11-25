@@ -11,6 +11,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        com.example.ctx2cal.platform.PlatformContextHolder.value = applicationContext
         setContent {
             App()
         }

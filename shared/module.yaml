@@ -12,9 +12,20 @@ dependencies:
   - $compose.hotReload.runtimeApi
   - $libs.androidx.lifecycle.viewmodel.compose
   - $libs.androidx.lifecycle.runtime.compose
+  - $libs.androidx.lifecycle.viewmodel.navigation3
+  - $libs.androidx.navigation3.ui
+  - $libs.koin.compose
+  - $libs.koin.compose.viewmodel
+  - $libs.koin.compose.navigation3
+  - $libs.kotlinx.coroutines.core
+  - $libs.kotlinx.coroutines.test
+  - $libs.kotlinx.serialization.json
 
 dependencies@android:
   - $compose.uiTooling
+  - $libs.kotlinx.coroutines.android
+  - $libs.litertlm.android
+  - $libs.mlkit.genai.prompt
 
 settings:
   compose:
@@ -23,3 +34,5 @@ settings:
       packageName: com.example.ctx2cal.resources
       # Generate public accessors so other modules (and previews) can use Res.*
       exposedAccessors: true
+  kotlin:
+    serialization: enabled

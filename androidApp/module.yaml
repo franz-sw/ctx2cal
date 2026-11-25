@@ -11,3 +11,5 @@ settings:
   android:
     namespace: com.example.ctx2cal
     applicationId: com.example.ctx2cal
+    minSdk: 26
+    buildToolsVersion: 36.0.0
