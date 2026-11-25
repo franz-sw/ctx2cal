@@ -31,7 +31,7 @@ settings:
   compose:
     enabled: true
     resources:
-      packageName: com.example.ctx2cal.resources
+      packageName: de.franzsw.ctx2cal.resources
       # Generate public accessors so other modules (and previews) can use Res.*
       exposedAccessors: true
   kotlin:

@@ -1,4 +1,4 @@
-package com.example.ctx2cal
+package de.franzsw.ctx2cal
 
 import android.os.Build
 import java.time.LocalDate

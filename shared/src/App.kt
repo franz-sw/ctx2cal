@@ -1,9 +1,9 @@
-package com.example.ctx2cal
+package de.franzsw.ctx2cal
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -20,14 +20,15 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
 import androidx.savedstate.serialization.SavedStateConfiguration
-import com.example.ctx2cal.di.appModule
-import com.example.ctx2cal.di.platformModule
-import com.example.ctx2cal.navigation.ExtractRoute
-import com.example.ctx2cal.navigation.ModelSetup
-import com.example.ctx2cal.presentation.extract.ExtractScreen
-import com.example.ctx2cal.presentation.extract.ExtractViewModel
-import com.example.ctx2cal.presentation.setup.ModelSetupScreen
-import com.example.ctx2cal.presentation.setup.ModelSetupViewModel
+import de.franzsw.ctx2cal.core.presentation.design_system.theme.AppTheme
+import de.franzsw.ctx2cal.di.appModule
+import de.franzsw.ctx2cal.di.platformModule
+import de.franzsw.ctx2cal.navigation.ExtractRoute
+import de.franzsw.ctx2cal.navigation.ModelSetup
+import de.franzsw.ctx2cal.presentation.extract.ExtractScreen
+import de.franzsw.ctx2cal.presentation.extract.ExtractViewModel
+import de.franzsw.ctx2cal.presentation.setup.ModelSetupScreen
+import de.franzsw.ctx2cal.presentation.setup.ModelSetupViewModel
 import kotlinx.serialization.modules.SerializersModule
 import org.jetbrains.compose.reload.DevelopmentEntryPoint
 import org.koin.compose.KoinApplication
@@ -38,7 +39,7 @@ import org.koin.compose.viewmodel.koinViewModel
 @Preview
 @DevelopmentEntryPoint
 fun App() {
-    MaterialTheme {
+    AppTheme(darkTheme = isSystemInDarkTheme()) {
         KoinApplication(
             application = {
                 modules(appModule, platformModule)

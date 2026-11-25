@@ -1,6 +1,6 @@
-package com.example.ctx2cal.domain.extraction
+package de.franzsw.ctx2cal.domain.extraction
 
-import com.example.ctx2cal.domain.model.CalendarEventDraft
+import de.franzsw.ctx2cal.domain.model.CalendarEventDraft
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.jsonObject
@@ -57,10 +57,10 @@ object EventJsonParser {
 
         val startRaw = obj["start"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.content?.trim() ?: ""
         val endRaw = obj["end"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.content?.trim() ?: ""
-        if (!com.example.ctx2cal.domain.model.IsoDateTime.isValid(startRaw)) {
+        if (!de.franzsw.ctx2cal.domain.model.IsoDateTime.isValid(startRaw)) {
             return Parsed.Invalid("Missing or invalid start: $startRaw")
         }
-        if (!com.example.ctx2cal.domain.model.IsoDateTime.isValid(endRaw)) {
+        if (!de.franzsw.ctx2cal.domain.model.IsoDateTime.isValid(endRaw)) {
             return Parsed.Invalid("Missing or invalid end: $endRaw")
         }
         val allDay = obj["allDay"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.content?.trim()
@@ -70,8 +70,8 @@ object EventJsonParser {
 
         val draft = CalendarEventDraft(
             title = title,
-            startIso = com.example.ctx2cal.domain.model.IsoDateTime.normalize(startRaw),
-            endIso = com.example.ctx2cal.domain.model.IsoDateTime.normalize(endRaw),
+            startIso = de.franzsw.ctx2cal.domain.model.IsoDateTime.normalize(startRaw),
+            endIso = de.franzsw.ctx2cal.domain.model.IsoDateTime.normalize(endRaw),
             allDay = allDay,
             description = description,
             location = location,

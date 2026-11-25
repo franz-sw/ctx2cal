@@ -1,4 +1,4 @@
-package com.example.ctx2cal.platform
+package de.franzsw.ctx2cal.platform
 
 /**
  * Holds the platform `Context` (as [Any], cast on Android). Set once from

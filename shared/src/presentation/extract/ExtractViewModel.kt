@@ -1,16 +1,16 @@
-package com.example.ctx2cal.presentation.extract
+package de.franzsw.ctx2cal.presentation.extract
 
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.ctx2cal.deviceTimeZoneId
-import com.example.ctx2cal.domain.extraction.EventJsonParser
-import com.example.ctx2cal.domain.model.CalendarEventDraft
-import com.example.ctx2cal.domain.model.ExtractionResult
-import com.example.ctx2cal.domain.ports.CalendarSharer
-import com.example.ctx2cal.domain.ports.EventExtractor
-import com.example.ctx2cal.domain.ports.IcsExporter
-import com.example.ctx2cal.todayIso
+import de.franzsw.ctx2cal.deviceTimeZoneId
+import de.franzsw.ctx2cal.domain.extraction.EventJsonParser
+import de.franzsw.ctx2cal.domain.model.CalendarEventDraft
+import de.franzsw.ctx2cal.domain.model.ExtractionResult
+import de.franzsw.ctx2cal.domain.ports.CalendarSharer
+import de.franzsw.ctx2cal.domain.ports.EventExtractor
+import de.franzsw.ctx2cal.domain.ports.IcsExporter
+import de.franzsw.ctx2cal.todayIso
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

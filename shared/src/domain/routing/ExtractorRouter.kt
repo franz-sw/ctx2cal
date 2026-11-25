@@ -1,9 +1,9 @@
-package com.example.ctx2cal.domain.routing
+package de.franzsw.ctx2cal.domain.routing
 
-import com.example.ctx2cal.domain.model.ExtractionResult
-import com.example.ctx2cal.domain.model.ModelStatus
-import com.example.ctx2cal.domain.ports.EventExtractor
-import com.example.ctx2cal.domain.ports.ModelCatalog
+import de.franzsw.ctx2cal.domain.model.ExtractionResult
+import de.franzsw.ctx2cal.domain.model.ModelStatus
+import de.franzsw.ctx2cal.domain.ports.EventExtractor
+import de.franzsw.ctx2cal.domain.ports.ModelCatalog
 
 /**
  * Routes extraction to Nano when available, else to the downloaded LiteRT model,

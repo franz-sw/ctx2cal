@@ -1,4 +1,4 @@
-package com.example.ctx2cal.data.llm
+package de.franzsw.ctx2cal.data.llm
 
 import android.content.Context
 import android.app.DownloadManager
@@ -6,9 +6,9 @@ import android.database.Cursor
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
-import com.example.ctx2cal.domain.model.ModelCandidate
-import com.example.ctx2cal.domain.ports.DownloadProgress
-import com.example.ctx2cal.domain.ports.ModelDownloader
+import de.franzsw.ctx2cal.domain.model.ModelCandidate
+import de.franzsw.ctx2cal.domain.ports.DownloadProgress
+import de.franzsw.ctx2cal.domain.ports.ModelDownloader
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow

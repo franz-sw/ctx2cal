@@ -1,7 +1,7 @@
-package com.example.ctx2cal.di
+package de.franzsw.ctx2cal.di
 
-import com.example.ctx2cal.presentation.extract.ExtractViewModel
-import com.example.ctx2cal.presentation.setup.ModelSetupViewModel
+import de.franzsw.ctx2cal.presentation.extract.ExtractViewModel
+import de.franzsw.ctx2cal.presentation.setup.ModelSetupViewModel
 import org.koin.compose.viewmodel.dsl.viewModel
 import org.koin.core.module.Module
 import org.koin.dsl.module

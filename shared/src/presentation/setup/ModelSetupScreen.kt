@@ -1,16 +1,25 @@
-package com.example.ctx2cal.presentation.setup
+package de.franzsw.ctx2cal.presentation.setup
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import com.example.ctx2cal.domain.model.ModelStatus
-import com.example.ctx2cal.domain.ports.DownloadProgress
+import androidx.compose.ui.unit.dp
+import de.franzsw.ctx2cal.core.presentation.design_system.components.AppActionButton
+import de.franzsw.ctx2cal.core.presentation.design_system.components.CustomElevatedCard
+import de.franzsw.ctx2cal.core.presentation.design_system.components.DefaultLoadingScreen
+import de.franzsw.ctx2cal.core.presentation.design_system.components.ErrorCard
+import de.franzsw.ctx2cal.core.presentation.design_system.components.HintCard
+import de.franzsw.ctx2cal.core.presentation.design_system.components.LCHeadline
+import de.franzsw.ctx2cal.domain.model.ModelStatus
+import de.franzsw.ctx2cal.domain.ports.DownloadProgress
 
 @Composable
 fun ModelSetupScreen(
@@ -18,16 +27,36 @@ fun ModelSetupScreen(
     onDownload: () -> Unit,
     onRetry: () -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth()) {
-        Text("On-device model")
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+    ) {
+        LCHeadline(name = "On-device model")
         when (state) {
-            is ModelSetupUiState.Loading -> CircularProgressIndicator()
+            is ModelSetupUiState.Loading -> DefaultLoadingScreen()
             is ModelSetupUiState.Failed -> {
-                Text(state.message)
-                TextButton(onClick = onRetry) { Text("Retry") }
+                ErrorCard(modifier = Modifier.fillMaxWidth()) {
+                    Text(state.message)
+                }
+                Spacer(Modifier.height(8.dp))
+                AppActionButton(
+                    text = "Retry",
+                    isLoading = false,
+                    onClick = onRetry,
+                )
             }
             is ModelSetupUiState.Ready -> {
-                Text(statusText(state.status))
+                CustomElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            statusText(state.status),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
                 val candidate = state.candidate
                 when (val dl = state.download) {
                     is DownloadProgress.Running -> {
@@ -36,25 +65,57 @@ fun ModelSetupScreen(
                             LinearProgressIndicator(
                                 progress = { dl.receivedBytes.toFloat() / total },
                                 modifier = Modifier.fillMaxWidth(),
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
                             )
                         } else {
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            LinearProgressIndicator(
+                                modifier = Modifier.fillMaxWidth(),
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                            )
                         }
-                        Text("Downloading…")
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Downloading…",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
                     }
-                    is DownloadProgress.Done -> Text("Downloaded to ${dl.path}")
+                    is DownloadProgress.Done -> {
+                        HintCard(hintTitle = "Downloaded", modifier = Modifier.fillMaxWidth()) {
+                            Text("Downloaded to ${dl.path}")
+                        }
+                    }
                     is DownloadProgress.Failed -> {
-                        Text(dl.reason)
-                        if (candidate != null) Button(onClick = onDownload) { Text("Retry download") }
+                        ErrorCard(modifier = Modifier.fillMaxWidth()) {
+                            Text(dl.reason)
+                        }
+                        if (candidate != null) {
+                            Spacer(Modifier.height(8.dp))
+                            AppActionButton(
+                                text = "Retry download",
+                                isLoading = false,
+                                onClick = onDownload,
+                            )
+                        }
                     }
                     null -> {
                         if (state.status is ModelStatus.None || state.status is ModelStatus.LiteRtNotDownloaded) {
                             if (candidate != null) {
-                                Text("Offered: ${candidate.name}")
-                                candidate.approxSizeBytes?.let { Text("Size ≈ ${it / 1_000_000} MB") }
-                                Button(onClick = onDownload) { Text("Download model") }
+                                HintCard(hintTitle = "Available model", modifier = Modifier.fillMaxWidth()) {
+                                    Text("Offered: ${candidate.name}")
+                                    candidate.approxSizeBytes?.let { Text("Size ≈ ${it / 1_000_000} MB") }
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                AppActionButton(
+                                    text = "Download model",
+                                    isLoading = false,
+                                    onClick = onDownload,
+                                )
                             } else {
                                 Text("No model is available on this device.")
+                                TextButton(onClick = onRetry) { Text("Retry") }
                             }
                         }
                     }

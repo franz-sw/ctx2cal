@@ -1,13 +1,13 @@
-package com.example.ctx2cal.presentation.setup
+package de.franzsw.ctx2cal.presentation.setup
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.ctx2cal.domain.model.ModelCandidate
-import com.example.ctx2cal.domain.model.ModelStatus
-import com.example.ctx2cal.domain.ports.DownloadProgress
-import com.example.ctx2cal.domain.ports.ModelCatalog
-import com.example.ctx2cal.domain.ports.ModelDownloader
-import com.example.ctx2cal.domain.ports.SettingsRepository
+import de.franzsw.ctx2cal.domain.model.ModelCandidate
+import de.franzsw.ctx2cal.domain.model.ModelStatus
+import de.franzsw.ctx2cal.domain.ports.DownloadProgress
+import de.franzsw.ctx2cal.domain.ports.ModelCatalog
+import de.franzsw.ctx2cal.domain.ports.ModelDownloader
+import de.franzsw.ctx2cal.domain.ports.SettingsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

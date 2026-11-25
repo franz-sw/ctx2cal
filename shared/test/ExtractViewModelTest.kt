@@ -1,12 +1,12 @@
-package com.example.ctx2cal
+package de.franzsw.ctx2cal
 
-import com.example.ctx2cal.domain.model.CalendarEventDraft
-import com.example.ctx2cal.domain.model.ExtractionResult
-import com.example.ctx2cal.domain.ports.CalendarSharer
-import com.example.ctx2cal.domain.ports.EventExtractor
-import com.example.ctx2cal.domain.ports.IcsExporter
-import com.example.ctx2cal.presentation.extract.ExtractUiState
-import com.example.ctx2cal.presentation.extract.ExtractViewModel
+import de.franzsw.ctx2cal.domain.model.CalendarEventDraft
+import de.franzsw.ctx2cal.domain.model.ExtractionResult
+import de.franzsw.ctx2cal.domain.ports.CalendarSharer
+import de.franzsw.ctx2cal.domain.ports.EventExtractor
+import de.franzsw.ctx2cal.domain.ports.IcsExporter
+import de.franzsw.ctx2cal.presentation.extract.ExtractUiState
+import de.franzsw.ctx2cal.presentation.extract.ExtractViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher

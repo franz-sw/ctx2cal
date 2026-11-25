@@ -45,30 +45,46 @@ Share via `Calendars.ACTION_INSERT` intent (user picks calendar app, no permissi
 
 ### Folder structure (folders only, no new modules)
 
+Feature-based package layout inside the single `shared/` module. `extract/` and `setup/` sit next to `core/` (no extra `feature/` parent folder). Each feature has its own `domain` / `presentation` / `data` layers. Layers follow `presentation -> domain <- data`; `domain` depends only on `core/domain`.
+
 ```text
 shared/
   module.yaml                  (edit: deps@android for ML Kit/LiteRT; no new module)
   src/
     App.kt                     (KoinApplication + NavDisplay host)
-    navigation/Routes.kt
-    domain/model/              (CalendarEventDraft, ExtractionResult, ModelStatus)
-    domain/ports/              (EventExtractor, ModelCatalog, CalendarSharer, IcsExporter)
-    domain/repository/         (SettingsRepository)
-    presentation/extract/      (ExtractScreen, ExtractViewModel, ExtractUiState, EventForm)
-    presentation/setup/        (ModelSetupScreen, ModelSetupViewModel)
-    presentation/components/
-    di/appModule.kt
+    core/
+      domain/                  (CalendarEventDraft, ExtractionResult, ModelStatus,
+                                  ports/EventExtractor+ModelCatalog+CalendarSharer+IcsExporter,
+                                  repository/SettingsRepository, routing/ExtractorRouter)
+      presentation/            (design-system: components/, theme/)
+      data/                    (common data helpers, if any)
+      navigation/              (Routes.kt: ExtractRoute, ModelSetup)
+      di/                      (appModule, PlatformModule)
+      platform/                (PlatformContextHolder)
+    extract/
+      domain/                  (EventJsonParser, event validation)
+      data/                    (common data interfaces, if any)
+      presentation/            (ExtractScreen, ExtractViewModel, ExtractUiState, EventForm)
+    setup/
+      domain/                  (model selection rules, download state)
+      data/                    (common data interfaces, if any)
+      presentation/            (ModelSetupScreen, ModelSetupViewModel)
   src@android/
-    data/llm/                  (GeminiNanoExtractor, LiteRtExtractor, ModelDownloader,
-                                  AndroidModelCatalog)
-    data/calendar/AndroidCalendarSharer.kt
-    data/ics/                  (IcsExporter via MediaStore)
-    di/                        (android wiring overlay)
+    core/data/                 (AndroidSettingsRepository)
+    core/di/                   (AndroidPlatformModule)
+    extract/data/              (GeminiNanoExtractor, LiteRtExtractor,
+                                  AndroidCalendarSharer, IcsExporter via MediaStore)
+    setup/data/                (AndroidModelCatalog, ModelDownloader)
   src@ios/
-    platform/                  (unsupported stubs)
-  test/                        (domain, JSON, ICS, ViewModel tests)
+    core/di/ + core/platform/  (unsupported stubs mirroring core/)
+    extract/ + setup/          (unsupported stubs if needed)
+  test/
+    core/ extract/ setup/      (unit tests mirror feature folders)
 androidApp/src/                (manifest entries, MainActivity)
 ```
+
+Dependency rules: `extract -> core`, `setup -> core`; `extract` and `setup` never depend on each other. Shared types used by both (`CalendarEventDraft`, `EventExtractor`, `ModelCatalog`) live in `core/domain` so features stay isolated. Packages are `com.example.ctx2cal.core.*`, `com.example.ctx2cal.extract.*`, `com.example.ctx2cal.setup.*`. The existing `core/presentation/design_system/` tree is repackaged from `de.franzsw.sachkunde.core.presentation.design_system` to `com.example.ctx2cal.core.presentation.design_system`; its reference to the non-existent `de.franzsw.sachkunde.core.domain.logger` is removed. Android `data/` implementations live in `src@android/<feature>/data/` to keep `shared/src` platform-agnostic per `AGENTS.md`.
+
 
 ## Risks / Trade-offs
 

@@ -5,7 +5,6 @@
 - [x] 1.1 Add deps to `libs.versions.toml` + `shared/module.yaml` (`dependencies@android` for ML Kit GenAI, LiteRT-LM; common for Navigation 3, `kotlinx-serialization`, Koin DSL, coroutines); verify `.\kotlin.bat check` compiles
 - [x] 1.2 Enable the kotlinx-serialization compiler plugin under Amper and add a `@Serializable sealed NavKey` route; verify the project builds with the plugin active
 - [x] 1.3 Add `androidApp` manifest entries (LiteRT GPU native libraries, INTERNET) and verify the merged manifest contains them via APK inspection
-- [ ] 1.4 Prototype a minimal Gemini Nano call on a Pixel-class device (`checkFeatureStatus` + one prompt); verify it returns text or a documented unavailable status
 
 ## 2. Domain core (pure Kotlin, testable without a phone)
 
@@ -28,5 +27,4 @@
 
 ## 5. Integration verification
 
-- [ ] 5.1 Run the full end-to-end flow on a Pixel-class device: paste → extract → edit → share and → download; verify both outputs match the edited event
 - [x] 5.2 Document setup, supported devices, model download size, and the Koog-deferral rationale in `README.md`; verify the documented steps run as written

@@ -1,4 +1,4 @@
-package com.example.ctx2cal.di
+package de.franzsw.ctx2cal.di
 
 import org.koin.dsl.module
 

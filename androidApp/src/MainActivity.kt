@@ -1,4 +1,4 @@
-package com.example.ctx2cal
+package de.franzsw.ctx2cal
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -11,7 +11,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        com.example.ctx2cal.platform.PlatformContextHolder.value = applicationContext
+        de.franzsw.ctx2cal.platform.PlatformContextHolder.value = applicationContext
         setContent {
             App()
         }

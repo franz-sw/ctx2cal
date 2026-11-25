@@ -1,4 +1,4 @@
-package com.example.ctx2cal.domain.model
+package de.franzsw.ctx2cal.domain.model
 
 import kotlinx.serialization.Serializable
 

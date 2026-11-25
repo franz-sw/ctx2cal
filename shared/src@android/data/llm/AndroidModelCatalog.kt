@@ -1,10 +1,10 @@
-package com.example.ctx2cal.data.llm
+package de.franzsw.ctx2cal.data.llm
 
-import com.example.ctx2cal.domain.model.ModelCandidate
-import com.example.ctx2cal.domain.model.ModelStatus
-import com.example.ctx2cal.domain.ports.ModelCatalog
-import com.example.ctx2cal.domain.ports.ModelDownloader
-import com.example.ctx2cal.domain.ports.SettingsRepository
+import de.franzsw.ctx2cal.domain.model.ModelCandidate
+import de.franzsw.ctx2cal.domain.model.ModelStatus
+import de.franzsw.ctx2cal.domain.ports.ModelCatalog
+import de.franzsw.ctx2cal.domain.ports.ModelDownloader
+import de.franzsw.ctx2cal.domain.ports.SettingsRepository
 
 /**
  * Selection order: Nano (system) > downloaded LiteRT > none.

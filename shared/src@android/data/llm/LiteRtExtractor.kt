@@ -1,8 +1,8 @@
-package com.example.ctx2cal.data.llm
+package de.franzsw.ctx2cal.data.llm
 
-import com.example.ctx2cal.domain.extraction.EventJsonParser
-import com.example.ctx2cal.domain.model.ExtractionResult
-import com.example.ctx2cal.domain.ports.EventExtractor
+import de.franzsw.ctx2cal.domain.extraction.EventJsonParser
+import de.franzsw.ctx2cal.domain.model.ExtractionResult
+import de.franzsw.ctx2cal.domain.ports.EventExtractor
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig

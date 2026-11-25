@@ -1,4 +1,4 @@
-package com.example.ctx2cal
+package de.franzsw.ctx2cal
 
 import androidx.compose.ui.window.ComposeUIViewController
 

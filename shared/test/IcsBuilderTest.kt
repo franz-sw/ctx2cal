@@ -1,7 +1,7 @@
-package com.example.ctx2cal
+package de.franzsw.ctx2cal
 
-import com.example.ctx2cal.domain.ics.IcsBuilder
-import com.example.ctx2cal.domain.model.CalendarEventDraft
+import de.franzsw.ctx2cal.domain.ics.IcsBuilder
+import de.franzsw.ctx2cal.domain.model.CalendarEventDraft
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals

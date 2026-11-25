@@ -9,7 +9,7 @@
 ## Layout
 
 - `project.yaml` — Amper project manifest (lists modules).
-- `shared/` — `kmp/lib`, Compose UI for Android + iOS (`com.example.ctx2cal`).
+- `shared/` — `kmp/lib`, Compose UI for Android + iOS (`de.franzsw.ctx2cal`).
   - `shared/src/App.kt` — main Compose entry.
   - `shared/src/Platform.kt` + `src@android/` + `src@ios/` — `expect`/`actual`.
 - `androidApp/` — `android/app`, single `MainActivity` hosting `shared.App()`.

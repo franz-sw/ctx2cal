@@ -1,4 +1,4 @@
-package com.example.ctx2cal.prototype
+package de.franzsw.ctx2cal.prototype
 
 import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.prompt.Generation

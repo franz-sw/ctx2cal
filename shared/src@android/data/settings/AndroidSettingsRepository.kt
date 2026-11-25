@@ -1,8 +1,8 @@
-package com.example.ctx2cal.data.settings
+package de.franzsw.ctx2cal.data.settings
 
 import android.content.Context
 import android.content.SharedPreferences
-import com.example.ctx2cal.domain.ports.SettingsRepository
+import de.franzsw.ctx2cal.domain.ports.SettingsRepository
 
 /** SharedPreferences-backed persisted backend/model-path settings. */
 class AndroidSettingsRepository(context: Context) : SettingsRepository {

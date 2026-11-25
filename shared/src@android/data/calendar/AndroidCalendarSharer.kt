@@ -1,10 +1,10 @@
-package com.example.ctx2cal.data.calendar
+package de.franzsw.ctx2cal.data.calendar
 
 import android.content.Context
 import android.content.Intent
 import android.provider.CalendarContract
-import com.example.ctx2cal.domain.model.CalendarEventDraft
-import com.example.ctx2cal.domain.ports.CalendarSharer
+import de.franzsw.ctx2cal.domain.model.CalendarEventDraft
+import de.franzsw.ctx2cal.domain.ports.CalendarSharer
 
 /**
  * Share via the Calendar app's insert flow — the user picks the calendar app,

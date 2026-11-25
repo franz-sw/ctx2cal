@@ -1,4 +1,4 @@
-package com.example.ctx2cal.navigation
+package de.franzsw.ctx2cal.navigation
 
 import androidx.navigation3.runtime.NavKey
 import kotlinx.serialization.Serializable

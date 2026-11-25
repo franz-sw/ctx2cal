@@ -9,8 +9,8 @@ Kotlin Multiplatform + Compose Multiplatform app (Android + iOS), built with **A
 | Path | What it is |
 |---|---|
 | `project.yaml` | Amper project manifest (lists modules) |
-| `shared/` | `kmp/lib` — Compose UI, package `com.example.ctx2cal` (`App.kt`, `Platform.kt` expect/actual) |
-| `androidApp/` | `android/app` — `MainActivity` hosting `shared.App()`; namespace `com.example.ctx2cal` |
+| `shared/` | `kmp/lib` — Compose UI, package `de.franzsw.ctx2cal` (`App.kt`, `Platform.kt` expect/actual) |
+| `androidApp/` | `android/app` — `MainActivity` hosting `shared.App()`; namespace `de.franzsw.ctx2cal` |
 | `iosApp/` | `ios/app` — Compose + Swift, `ViewController` |
 | `libs.versions.toml` | Version catalog |
 | `opencode.jsonc` + `AGENTS.md` | OpenCode V2 project config + agent instructions |

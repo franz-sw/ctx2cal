@@ -1,7 +1,7 @@
-package com.example.ctx2cal.domain.ics
+package de.franzsw.ctx2cal.domain.ics
 
-import com.example.ctx2cal.domain.model.CalendarEventDraft
-import com.example.ctx2cal.domain.model.IsoDateTime
+import de.franzsw.ctx2cal.domain.model.CalendarEventDraft
+import de.franzsw.ctx2cal.domain.model.IsoDateTime
 
 /** Pure-Kotlin RFC 5545 `.ics` builder (escaping, UID, DTSTAMP) — testable without a phone. */
 object IcsBuilder {

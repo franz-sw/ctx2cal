@@ -1,20 +1,20 @@
-package com.example.ctx2cal.di
+package de.franzsw.ctx2cal.di
 
-import com.example.ctx2cal.data.calendar.AndroidCalendarSharer
-import com.example.ctx2cal.data.ics.AndroidIcsExporter
-import com.example.ctx2cal.data.llm.AndroidModelCatalog
-import com.example.ctx2cal.data.llm.GeminiNanoExtractor
-import com.example.ctx2cal.data.llm.LiteRtExtractor
-import com.example.ctx2cal.data.llm.ModelDownloaderAndroid
-import com.example.ctx2cal.data.settings.AndroidSettingsRepository
-import com.example.ctx2cal.domain.ports.CalendarSharer
-import com.example.ctx2cal.domain.ports.EventExtractor
-import com.example.ctx2cal.domain.ports.IcsExporter
-import com.example.ctx2cal.domain.ports.ModelCatalog
-import com.example.ctx2cal.domain.ports.ModelDownloader
-import com.example.ctx2cal.domain.ports.SettingsRepository
-import com.example.ctx2cal.domain.routing.ExtractorRouter
-import com.example.ctx2cal.platform.PlatformContextHolder
+import de.franzsw.ctx2cal.data.calendar.AndroidCalendarSharer
+import de.franzsw.ctx2cal.data.ics.AndroidIcsExporter
+import de.franzsw.ctx2cal.data.llm.AndroidModelCatalog
+import de.franzsw.ctx2cal.data.llm.GeminiNanoExtractor
+import de.franzsw.ctx2cal.data.llm.LiteRtExtractor
+import de.franzsw.ctx2cal.data.llm.ModelDownloaderAndroid
+import de.franzsw.ctx2cal.data.settings.AndroidSettingsRepository
+import de.franzsw.ctx2cal.domain.ports.CalendarSharer
+import de.franzsw.ctx2cal.domain.ports.EventExtractor
+import de.franzsw.ctx2cal.domain.ports.IcsExporter
+import de.franzsw.ctx2cal.domain.ports.ModelCatalog
+import de.franzsw.ctx2cal.domain.ports.ModelDownloader
+import de.franzsw.ctx2cal.domain.ports.SettingsRepository
+import de.franzsw.ctx2cal.domain.routing.ExtractorRouter
+import de.franzsw.ctx2cal.platform.PlatformContextHolder
 import org.koin.core.module.Module
 import org.koin.dsl.module
 

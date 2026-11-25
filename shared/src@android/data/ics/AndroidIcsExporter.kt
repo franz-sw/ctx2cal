@@ -1,13 +1,13 @@
-package com.example.ctx2cal.data.ics
+package de.franzsw.ctx2cal.data.ics
 
 import android.content.ContentValues
 import android.content.Context
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
-import com.example.ctx2cal.domain.ics.IcsBuilder
-import com.example.ctx2cal.domain.model.CalendarEventDraft
-import com.example.ctx2cal.domain.ports.IcsExporter
+import de.franzsw.ctx2cal.domain.ics.IcsBuilder
+import de.franzsw.ctx2cal.domain.model.CalendarEventDraft
+import de.franzsw.ctx2cal.domain.ports.IcsExporter
 import java.util.UUID
 
 /**
