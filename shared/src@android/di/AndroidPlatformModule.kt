@@ -27,8 +27,9 @@ actual val platformModule: Module = module {
     single<ModelDownloader> { ModelDownloaderAndroid(androidContext()) }
     single { GeminiNanoExtractor() }
     single { LiteRtExtractor(modelPathProvider = { get<SettingsRepository>().modelPath() ?: get<ModelDownloader>().downloadedModelPath() }) }
-    single<ModelCatalog> { AndroidModelCatalog(get(), get(), get()) }
-    single<EventExtractor> { ExtractorRouter(get(), get(), get()) }
+    single<ModelCatalog> { AndroidModelCatalog(get<GeminiNanoExtractor>(), get<ModelDownloader>(), get<SettingsRepository>()) }
+    // Both backends implement EventExtractor, so bare get() would self-resolve — pin concrete types.
+    single<EventExtractor> { ExtractorRouter(get<GeminiNanoExtractor>(), get<LiteRtExtractor>(), get<ModelCatalog>()) }
     single<CalendarSharer> { AndroidCalendarSharer(androidContext()) }
     single<IcsExporter> { AndroidIcsExporter(androidContext()) }
 }

@@ -15,6 +15,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
@@ -23,13 +24,11 @@ import com.example.ctx2cal.di.appModule
 import com.example.ctx2cal.di.platformModule
 import com.example.ctx2cal.navigation.ExtractRoute
 import com.example.ctx2cal.navigation.ModelSetup
-import com.example.ctx2cal.navigation.Route
 import com.example.ctx2cal.presentation.extract.ExtractScreen
 import com.example.ctx2cal.presentation.extract.ExtractViewModel
 import com.example.ctx2cal.presentation.setup.ModelSetupScreen
 import com.example.ctx2cal.presentation.setup.ModelSetupViewModel
 import kotlinx.serialization.modules.SerializersModule
-import kotlinx.serialization.modules.subclassesOfSealed
 import org.jetbrains.compose.reload.DevelopmentEntryPoint
 import org.koin.compose.KoinApplication
 import org.koin.compose.viewmodel.koinViewModel
@@ -48,8 +47,9 @@ fun App() {
             val config = remember {
                 SavedStateConfiguration {
                     serializersModule = SerializersModule {
-                        polymorphic(Route::class, ExtractRoute::class, ExtractRoute.serializer())
-                        polymorphic(Route::class, ModelSetup::class, ModelSetup.serializer())
+                        // NavBackStack serializes as NavKey, not Route — register under NavKey.
+                        polymorphic(NavKey::class, ExtractRoute::class, ExtractRoute.serializer())
+                        polymorphic(NavKey::class, ModelSetup::class, ModelSetup.serializer())
                     }
                 }
             }
