@@ -173,7 +173,7 @@ fun ExtractScreen(
                     }
                 }
                 val activeModelLabel = when (modelStatus) {
-                    is ModelStatus.NanoAvailable -> "Gemini Nano"
+                    is ModelStatus.NanoAvailable -> modelStatus.displayName
                     is ModelStatus.LiteRtReady -> modelStatus.modelName ?: "LiteRT-LM"
                     else -> "on-device model"
                 }
@@ -290,7 +290,7 @@ private fun ModelStatusBanner(
     when (status) {
         null -> Unit
         is ModelStatus.NanoAvailable -> {
-            StatusChip(text = "Active · Gemini Nano (on-device)")
+            StatusChip(text = "Active · ${status.displayName} (on-device)")
         }
         is ModelStatus.LiteRtReady -> {
             StatusChip(text = "Active · ${status.modelName ?: "LiteRT"} (on-device)")

@@ -1,9 +1,11 @@
 package de.franzsw.ctx2cal.core.data.llm
 
+import android.util.Log
 import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.common.GenAiException
 import com.google.mlkit.genai.prompt.GenerateContentResponse
 import com.google.mlkit.genai.prompt.Generation
+import de.franzsw.ctx2cal.core.domain.llm.NanoStatusMapper
 import de.franzsw.ctx2cal.core.domain.model.ExtractionResult
 import de.franzsw.ctx2cal.core.domain.model.ModelStatus
 import de.franzsw.ctx2cal.core.domain.ports.EventExtractor
@@ -24,15 +26,21 @@ class GeminiNanoExtractor(
     suspend fun nanoStatus(): ModelStatus {
         val model = Generation.getClient()
         return try {
-            when (model.checkStatus()) {
-                FeatureStatus.AVAILABLE -> ModelStatus.NanoAvailable
-                FeatureStatus.DOWNLOADABLE -> ModelStatus.NanoDownloadable
-                FeatureStatus.DOWNLOADING -> ModelStatus.NanoDownloading
-                else -> ModelStatus.NanoUnavailable
+            val status = model.checkStatus()
+            val baseName = if (
+                status == FeatureStatus.AVAILABLE ||
+                status == FeatureStatus.DOWNLOADABLE ||
+                status == FeatureStatus.DOWNLOADING
+            ) {
+                runCatching { model.getBaseModelName() }.getOrNull()
+            } else {
+                null
             }
+            NanoStatusMapper.mapNanoStatus(status, baseName)
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.w("GeminiNanoExtractor", "checkStatus failed", e)
             ModelStatus.NanoUnavailable
         } finally {
             model.close()
@@ -42,7 +50,13 @@ class GeminiNanoExtractor(
     override suspend fun extract(prompt: String): ExtractionResult {
         val model = Generation.getClient()
         try {
-            if (model.checkStatus() != FeatureStatus.AVAILABLE) {
+            val status = model.checkStatus()
+            val baseName = if (status == FeatureStatus.DOWNLOADABLE || status == FeatureStatus.DOWNLOADING) {
+                runCatching { model.getBaseModelName() }.getOrNull()
+            } else {
+                null
+            }
+            if (!NanoStatusMapper.isNanoReady(status, baseName)) {
                 return ExtractionResult.Failure("Gemini Nano is not available on this device.", isNoModel = true)
             }
             return extractWithRetry(

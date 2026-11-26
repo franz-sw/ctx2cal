@@ -75,7 +75,7 @@ class ExtractorRouterTest {
         val router = ExtractorRouter(
             nano = FakeExtractor("nano", ExtractionResult.Success(nanoDraft)),
             liteRt = FakeExtractor("litertlm", ExtractionResult.Success(liteRtDraft)),
-            catalog = FakeCatalog(ModelStatus.NanoAvailable),
+            catalog = FakeCatalog(ModelStatus.NanoAvailable()),
         )
         assertEquals("nano+litertlm", router.backendName)
     }
@@ -84,7 +84,7 @@ class ExtractorRouterTest {
     fun `nano preferred when available`() = runTest {
         val nano = FakeExtractor("nano", ExtractionResult.Success(nanoDraft))
         val liteRt = FakeExtractor("litertlm", ExtractionResult.Success(liteRtDraft))
-        val router = ExtractorRouter(nano, liteRt, FakeCatalog(ModelStatus.NanoAvailable))
+        val router = ExtractorRouter(nano, liteRt, FakeCatalog(ModelStatus.NanoAvailable()))
 
         val result = router.extract("prompt")
         assertIs<ExtractionResult.Success>(result)
@@ -110,7 +110,7 @@ class ExtractorRouterTest {
     fun `nano runtime failure falls back to liteRT success`() = runTest {
         val nano = FakeExtractor("nano", ExtractionResult.Failure("nano boom", isNoModel = false))
         val liteRt = FakeExtractor("litertlm", ExtractionResult.Success(liteRtDraft))
-        val router = ExtractorRouter(nano, liteRt, FakeCatalog(ModelStatus.NanoAvailable))
+        val router = ExtractorRouter(nano, liteRt, FakeCatalog(ModelStatus.NanoAvailable()))
 
         val result = router.extract("prompt")
         assertIs<ExtractionResult.Success>(result)
@@ -124,7 +124,7 @@ class ExtractorRouterTest {
         val nanoFailure = ExtractionResult.Failure("nano boom", isNoModel = false)
         val nano = FakeExtractor("nano", nanoFailure)
         val liteRt = FakeExtractor("litertlm", ExtractionResult.Failure("no model", isNoModel = true))
-        val router = ExtractorRouter(nano, liteRt, FakeCatalog(ModelStatus.NanoAvailable))
+        val router = ExtractorRouter(nano, liteRt, FakeCatalog(ModelStatus.NanoAvailable()))
 
         val result = router.extract("prompt")
         assertIs<ExtractionResult.Failure>(result)
@@ -135,7 +135,7 @@ class ExtractorRouterTest {
     fun `nano failure with liteRT generic failure returns liteRT failure`() = runTest {
         val nano = FakeExtractor("nano", ExtractionResult.Failure("nano boom", isNoModel = false))
         val liteRt = FakeExtractor("litertlm", ExtractionResult.Failure("litertlm boom", isNoModel = false))
-        val router = ExtractorRouter(nano, liteRt, FakeCatalog(ModelStatus.NanoAvailable))
+        val router = ExtractorRouter(nano, liteRt, FakeCatalog(ModelStatus.NanoAvailable()))
 
         val result = router.extract("prompt")
         assertIs<ExtractionResult.Failure>(result)
@@ -147,7 +147,7 @@ class ExtractorRouterTest {
     fun `nano success is returned even if liteRT would fail`() = runTest {
         val nano = FakeExtractor("nano", ExtractionResult.Success(nanoDraft))
         val liteRt = FakeExtractor("litertlm", ExtractionResult.Failure("litertlm boom"))
-        val router = ExtractorRouter(nano, liteRt, FakeCatalog(ModelStatus.NanoAvailable))
+        val router = ExtractorRouter(nano, liteRt, FakeCatalog(ModelStatus.NanoAvailable()))
 
         val result = router.extract("prompt")
         assertIs<ExtractionResult.Success>(result)
@@ -197,7 +197,7 @@ class ExtractorRouterTest {
         val liteRt = FakeExtractor("litertlm", ExtractionResult.Success(liteRtDraft))
         val catalog = FakeCatalog(
             status = ModelStatus.LiteRtReady("/data/qwen3-0.6b-int4.litertlm", "qwen3-0.6b-int4", "Qwen3 0.6B INT4"),
-            nanoStatusOverride = ModelStatus.NanoAvailable,
+            nanoStatusOverride = ModelStatus.NanoAvailable(),
         )
         val router = ExtractorRouter(nano, liteRt, catalog)
 
@@ -214,7 +214,7 @@ class ExtractorRouterTest {
         val liteRt = FakeExtractor("litertlm", ExtractionResult.Failure("litert boom", isNoModel = false))
         val catalog = FakeCatalog(
             status = ModelStatus.LiteRtReady("/data/qwen3-0.6b-int4.litertlm", "qwen3-0.6b-int4", "Qwen3 0.6B INT4"),
-            nanoStatusOverride = ModelStatus.NanoAvailable,
+            nanoStatusOverride = ModelStatus.NanoAvailable(),
         )
         val router = ExtractorRouter(nano, liteRt, catalog)
 

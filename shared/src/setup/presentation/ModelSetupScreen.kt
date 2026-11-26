@@ -270,7 +270,7 @@ private fun SystemModelSection(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = "Gemini Nano",
+                                text = nanoStatus.displayName,
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
                             )
@@ -553,7 +553,7 @@ private fun formatSize(bytes: Long): String {
 }
 
 private fun statusTitle(status: ModelStatus): String = when (status) {
-    is ModelStatus.NanoAvailable -> "Gemini Nano ready"
+    is ModelStatus.NanoAvailable -> "${status.displayName} ready"
     is ModelStatus.NanoDownloadable -> "Gemini Nano downloadable"
     is ModelStatus.NanoDownloading -> "Gemini Nano downloading"
     is ModelStatus.NanoUnavailable -> "Gemini Nano unavailable"

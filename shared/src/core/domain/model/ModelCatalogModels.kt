@@ -2,7 +2,10 @@ package de.franzsw.ctx2cal.core.domain.model
 
 /** What on-device model capability is currently available. */
 sealed interface ModelStatus {
-    data object NanoAvailable : ModelStatus
+    data class NanoAvailable(val version: String? = null) : ModelStatus {
+        val displayName: String
+            get() = if (version.isNullOrBlank()) "Gemini Nano" else "Gemini Nano $version"
+    }
     data object NanoDownloadable : ModelStatus
     data object NanoDownloading : ModelStatus
     data object NanoUnavailable : ModelStatus

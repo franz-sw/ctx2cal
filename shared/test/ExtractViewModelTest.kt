@@ -316,7 +316,7 @@ class ExtractViewModelTest {
 
     @Test
     fun `stale isNoModel error clears on refresh when model becomes ready`() = runTest(dispatcher) {
-        for (readyStatus in listOf(ModelStatus.LiteRtReady("/data/model.litertlm"), ModelStatus.NanoAvailable)) {
+        for (readyStatus in listOf(ModelStatus.LiteRtReady("/data/model.litertlm"), ModelStatus.NanoAvailable())) {
             val catalog = FakeCatalog(ModelStatus.None)
             val extractor = FakeExtractor(ExtractionResult.Failure("No model", isNoModel = true))
             val vm = vm(extractor, catalog = catalog)

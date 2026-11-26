@@ -34,8 +34,8 @@ class AndroidModelCatalog(
         val activeId = resolveActiveModelId(nanoStatus, downloadedPaths)
 
         return when {
-            activeId == ModelCatalogEntries.NANO_MODEL_ID && nanoStatus == ModelStatus.NanoAvailable -> {
-                ModelStatus.NanoAvailable
+            activeId == ModelCatalogEntries.NANO_MODEL_ID && nanoStatus is ModelStatus.NanoAvailable -> {
+                nanoStatus
             }
             activeId != null && downloadedPaths[activeId] != null -> {
                 val candidate = ModelCatalogEntries.findById(activeId)
@@ -101,7 +101,7 @@ class AndroidModelCatalog(
 
     override suspend fun selectActiveModel(modelId: String) {
         if (modelId == ModelCatalogEntries.NANO_MODEL_ID) {
-            if (nano.nanoStatus() == ModelStatus.NanoAvailable) {
+            if (nano.nanoStatus() is ModelStatus.NanoAvailable) {
                 settings.setActiveModelId(ModelCatalogEntries.NANO_MODEL_ID)
                 settings.setPreferredBackend("gemini-nano")
             }
@@ -129,7 +129,7 @@ class AndroidModelCatalog(
         val savedActiveId = settings.activeModelId()
         return when {
             savedActiveId == ModelCatalogEntries.NANO_MODEL_ID -> {
-                if (nanoStatus == ModelStatus.NanoAvailable) {
+                if (nanoStatus is ModelStatus.NanoAvailable) {
                     ModelCatalogEntries.NANO_MODEL_ID
                 } else {
                     fallbackFromStaleSelection(nanoStatus, downloadedPaths)
@@ -148,7 +148,7 @@ class AndroidModelCatalog(
             }
             else -> {
                 when {
-                    nanoStatus == ModelStatus.NanoAvailable -> ModelCatalogEntries.NANO_MODEL_ID
+                    nanoStatus is ModelStatus.NanoAvailable -> ModelCatalogEntries.NANO_MODEL_ID
                     downloadedPaths.isNotEmpty() -> {
                         val firstId = downloadedPaths.keys.first()
                         settings.setActiveModelId(firstId)
@@ -166,7 +166,7 @@ class AndroidModelCatalog(
         downloadedPaths: Map<String, String>,
     ): String? {
         return when {
-            nanoStatus == ModelStatus.NanoAvailable -> {
+            nanoStatus is ModelStatus.NanoAvailable -> {
                 settings.setActiveModelId(ModelCatalogEntries.NANO_MODEL_ID)
                 settings.setModelPath(null)
                 settings.setPreferredBackend("gemini-nano")

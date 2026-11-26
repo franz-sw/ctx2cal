@@ -217,14 +217,14 @@ class ModelSetupViewModelTest {
         val vm = vm(catalog)
         advanceUntilIdle()
         assertIs<ModelSetupUiState.Ready>(vm.state.value)
-        catalog.status = ModelStatus.NanoAvailable
+        catalog.status = ModelStatus.NanoAvailable()
         catalog.suspendMillis = 5_000L
         vm.refresh()
         runCurrent()
         assertIs<ModelSetupUiState.Loading>(vm.state.value)
         advanceUntilIdle()
         val ready = assertIs<ModelSetupUiState.Ready>(vm.state.value)
-        assertEquals(ModelStatus.NanoAvailable, ready.status)
+        assertEquals(ModelStatus.NanoAvailable(), ready.status)
         assertEquals(candidate, ready.candidate)
     }
 
@@ -401,7 +401,7 @@ class ModelSetupViewModelTest {
         val catalog = FakeCatalog(ModelStatus.LiteRtReady("/data/qwen3-0.6b-int4.litertlm"), ModelCatalogEntries.QWEN3_0_6B_INT4)
         catalog.snapshotOverride = {
             ModelCatalogSnapshot(
-                nanoStatus = ModelStatus.NanoAvailable,
+                nanoStatus = ModelStatus.NanoAvailable(),
                 models = listOf(
                     CatalogModelState(
                         candidate = ModelCatalogEntries.QWEN3_0_6B_INT4,
@@ -433,12 +433,12 @@ class ModelSetupViewModelTest {
 
         // Switch back to Gemini Nano
         currentActive = ModelCatalogEntries.NANO_MODEL_ID
-        catalog.status = ModelStatus.NanoAvailable
+        catalog.status = ModelStatus.NanoAvailable()
         vm.onSelectActiveModel(ModelCatalogEntries.NANO_MODEL_ID)
         advanceUntilIdle()
         ready = assertIs<ModelSetupUiState.Ready>(vm.state.value)
         assertEquals(ModelCatalogEntries.NANO_MODEL_ID, ready.activeModelId)
-        assertEquals(ModelStatus.NanoAvailable, ready.status)
+        assertEquals(ModelStatus.NanoAvailable(), ready.status)
         assertEquals(
             listOf(ModelCatalogEntries.QWEN3_1_7B_INT4.id, ModelCatalogEntries.NANO_MODEL_ID),
             catalog.selectedModelIds,

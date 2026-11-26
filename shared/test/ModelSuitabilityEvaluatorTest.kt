@@ -128,7 +128,7 @@ class ModelSuitabilityEvaluatorTest {
         )
         assertFalse(
             ModelSuitabilityEvaluator.shouldShowNoAcceleratedWarning(
-                nanoStatus = ModelStatus.NanoAvailable,
+                nanoStatus = ModelStatus.NanoAvailable(),
                 suitabilities = results.values,
             )
         )
