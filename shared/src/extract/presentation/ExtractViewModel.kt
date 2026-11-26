@@ -52,6 +52,7 @@ class ExtractViewModel(
     val modelStatus: StateFlow<ModelStatus?> = _modelStatus.asStateFlow()
 
     private var extractJob: Job? = null
+    private var extractGeneration: Long = 0L
     private var exportJob: Job? = null
 
     init {
@@ -95,8 +96,10 @@ class ExtractViewModel(
         val cleaned = text.trim()
         if (cleaned.isEmpty()) return
         extractJob?.cancel()
+        extractJob = null
         savedState[KEY_INPUT_TEXT] = cleaned
         _state.value = ExtractUiState.Input(cleaned)
+        onExtract()
     }
 
     fun onClearText() {
@@ -126,12 +129,14 @@ class ExtractViewModel(
         if (text.isBlank()) return
         savedState[KEY_INPUT_TEXT] = text
         _state.value = ExtractUiState.Extracting
+        val generation = ++extractGeneration
         extractJob = viewModelScope.launch {
             try {
                 val prompt = EventJsonParser.buildPrompt(text, todayIso(), deviceTimeZoneId())
                 val result = withTimeout(extractionTimeoutMs) {
                     extractor.extract(prompt)
                 }
+                if (generation != extractGeneration) return@launch
                 when (result) {
                     is ExtractionResult.Success -> _state.value = ExtractUiState.Review(result.draft, text)
                     is ExtractionResult.NoEvent -> _state.value = ExtractUiState.Input(
@@ -142,27 +147,32 @@ class ExtractViewModel(
                         ExtractUiState.Error(result.reason, result.isNoModel, text)
                 }
             } catch (_: TimeoutCancellationException) {
-                _state.value = ExtractUiState.Error(
-                    message = "Extraction timed out. Try shorter text or retry.",
-                    isNoModel = false,
-                    inputText = text,
-                )
+                if (generation == extractGeneration) {
+                    _state.value = ExtractUiState.Error(
+                        message = "Extraction timed out. Try shorter text or retry.",
+                        isNoModel = false,
+                        inputText = text,
+                    )
+                }
             } catch (e: CancellationException) {
-                if (_state.value is ExtractUiState.Extracting) {
+                if (generation == extractGeneration && _state.value is ExtractUiState.Extracting) {
                     _state.value = ExtractUiState.Input(text)
                 }
                 throw e
             } catch (e: Exception) {
-                _state.value = ExtractUiState.Error(
-                    message = e.message?.takeIf { it.isNotBlank() } ?: "Extraction failed unexpectedly.",
-                    isNoModel = false,
-                    inputText = text,
-                )
+                if (generation == extractGeneration) {
+                    _state.value = ExtractUiState.Error(
+                        message = e.message?.takeIf { it.isNotBlank() } ?: "Extraction failed unexpectedly.",
+                        isNoModel = false,
+                        inputText = text,
+                    )
+                }
             }
         }
     }
 
     fun onCancelExtract() {
+        extractGeneration++
         extractJob?.cancel()
         extractJob = null
         _state.value = ExtractUiState.Input(savedText())

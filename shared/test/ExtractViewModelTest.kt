@@ -1,5 +1,6 @@
 package de.franzsw.ctx2cal
 
+import androidx.lifecycle.SavedStateHandle
 import de.franzsw.ctx2cal.core.domain.model.CalendarEventDraft
 import de.franzsw.ctx2cal.core.domain.model.ExtractionResult
 import de.franzsw.ctx2cal.core.domain.model.ModelCandidate
@@ -381,5 +382,124 @@ class ExtractViewModelTest {
         assertEquals(false, err.isNoModel)
         assertEquals(1, extractor.calls)
         assertEquals("Dentist at ten", err.inputText)
+    }
+
+    @Test
+    fun `onReceiveSharedText trims text persists to SavedStateHandle and auto-extracts`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val extractor = FakeExtractor(ExtractionResult.Success(draft), gate = gate)
+        val savedState = SavedStateHandle()
+        val vm = ExtractViewModel(
+            extractor = extractor,
+            sharer = FakeSharer(),
+            exporter = FakeExporter(),
+            catalog = null,
+            savedState = savedState,
+        )
+
+        vm.onReceiveSharedText("  Dentist at ten  ")
+        assertEquals("Dentist at ten", savedState["inputText"])
+        assertIs<ExtractUiState.Extracting>(vm.state.value)
+
+        runCurrent()
+        assertEquals(1, extractor.calls)
+        assertIs<ExtractUiState.Extracting>(vm.state.value)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        val review = assertIs<ExtractUiState.Review>(vm.state.value)
+        assertEquals("Dentist at ten", review.inputText)
+    }
+
+    @Test
+    fun `onReceiveSharedText ignores blank text without altering existing state`() = runTest(dispatcher) {
+        val extractor = FakeExtractor(ExtractionResult.Success(draft))
+        val savedState = SavedStateHandle()
+        val vm = ExtractViewModel(
+            extractor = extractor,
+            sharer = FakeSharer(),
+            exporter = FakeExporter(),
+            catalog = null,
+            savedState = savedState,
+        )
+        vm.onTextChange("Existing draft text")
+
+        vm.onReceiveSharedText("   \n\t  ")
+        vm.onReceiveSharedText("")
+        advanceUntilIdle()
+
+        val input = assertIs<ExtractUiState.Input>(vm.state.value)
+        assertEquals("Existing draft text", input.text)
+        assertEquals("Existing draft text", savedState["inputText"])
+        assertEquals(0, extractor.calls)
+    }
+
+    @Test
+    fun `onReceiveSharedText cancels in-flight extraction and extracts new text`() = runTest(dispatcher) {
+        val firstGate = CompletableDeferred<Unit>()
+        val secondGate = CompletableDeferred<Unit>()
+        val secondDraft = draft.copy(title = "Lunch with Alex")
+        var callCount = 0
+        val extractor = object : EventExtractor {
+            override val backendName = "fake"
+            val prompts = mutableListOf<String>()
+
+            override suspend fun extract(prompt: String): ExtractionResult {
+                prompts += prompt
+                return if (++callCount == 1) {
+                    firstGate.await()
+                    ExtractionResult.Success(draft)
+                } else {
+                    secondGate.await()
+                    ExtractionResult.Success(secondDraft)
+                }
+            }
+        }
+        val savedState = SavedStateHandle()
+        val vm = ExtractViewModel(
+            extractor = extractor,
+            sharer = FakeSharer(),
+            exporter = FakeExporter(),
+            catalog = null,
+            savedState = savedState,
+        )
+
+        vm.onTextChange("Old dentist text")
+        vm.onExtract()
+        runCurrent()
+        assertIs<ExtractUiState.Extracting>(vm.state.value)
+        assertEquals(1, extractor.prompts.size)
+
+        vm.onReceiveSharedText("  Lunch with Alex at noon  ")
+        assertEquals("Lunch with Alex at noon", savedState["inputText"])
+        assertIs<ExtractUiState.Extracting>(vm.state.value)
+
+        // Let the cancelled first job process CancellationException and the second job start.
+        runCurrent()
+        assertIs<ExtractUiState.Extracting>(vm.state.value)
+        assertEquals(2, extractor.prompts.size)
+
+        firstGate.complete(Unit)
+        runCurrent()
+        assertIs<ExtractUiState.Extracting>(vm.state.value)
+
+        secondGate.complete(Unit)
+        advanceUntilIdle()
+        val review = assertIs<ExtractUiState.Review>(vm.state.value)
+        assertEquals("Lunch with Alex", review.draft.title)
+        assertEquals("Lunch with Alex at noon", review.inputText)
+    }
+
+    @Test
+    fun `onReceiveSharedText preserves text when no model is available`() = runTest(dispatcher) {
+        val extractor = FakeExtractor(ExtractionResult.Failure("No model", isNoModel = true))
+        val vm = vm(extractor)
+
+        vm.onReceiveSharedText("  Team sync tomorrow at 10  ")
+        advanceUntilIdle()
+
+        val err = assertIs<ExtractUiState.Error>(vm.state.value)
+        assertEquals(true, err.isNoModel)
+        assertEquals("Team sync tomorrow at 10", err.inputText)
     }
 }

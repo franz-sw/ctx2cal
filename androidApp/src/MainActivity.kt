@@ -26,7 +26,9 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         de.franzsw.ctx2cal.core.platform.PlatformContextHolder.value = applicationContext
-        extractSharedText(intent)?.let { pendingSharedText = it }
+        if (savedInstanceState == null) {
+            consumeIncomingText(intent)?.let { pendingSharedText = it }
+        }
 
         setContent {
             val darkTheme = isSystemInDarkTheme()
@@ -47,13 +49,36 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        extractSharedText(intent)?.let { pendingSharedText = it }
+        consumeIncomingText(intent)?.let { pendingSharedText = it }
     }
 
-    private fun extractSharedText(intent: Intent?): String? {
-        if (intent?.action != Intent.ACTION_SEND) return null
-        if (intent.type?.startsWith("text/") != true) return null
-        return intent.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() }
+    private fun consumeIncomingText(intent: Intent?): String? {
+        if (intent == null || intent.getBooleanExtra(EXTRA_CONSUMED, false)) return null
+        val text = extractIncomingText(intent) ?: return null
+        intent.putExtra(EXTRA_CONSUMED, true)
+        return text
+    }
+
+    private fun extractIncomingText(intent: Intent): String? {
+        return when (intent.action) {
+            Intent.ACTION_PROCESS_TEXT -> {
+                val mimeType = intent.type
+                if (mimeType != null && !mimeType.startsWith("text/")) return null
+                intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)
+                    ?.toString()
+                    ?.takeIf { it.isNotBlank() }
+            }
+            Intent.ACTION_SEND -> {
+                if (intent.type?.startsWith("text/") != true) return null
+                intent.getStringExtra(Intent.EXTRA_TEXT)
+                    ?.takeIf { it.isNotBlank() }
+            }
+            else -> null
+        }
+    }
+
+    companion object {
+        private const val EXTRA_CONSUMED = "de.franzsw.ctx2cal.EXTRA_INCOMING_TEXT_CONSUMED"
     }
 }
 

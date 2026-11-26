@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">ContextToCalendar</string>
+    <string name="process_text_label">Extract event</string>
 </resources>

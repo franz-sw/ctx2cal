@@ -63,6 +63,14 @@ fun App(
             val snackbarHost = remember { SnackbarHostState() }
             val currentRoute = backStack.lastOrNull()
 
+            LaunchedEffect(sharedText) {
+                if (!sharedText.isNullOrBlank()) {
+                    while (backStack.size > 1 && backStack.lastOrNull() !is ExtractRoute) {
+                        backStack.removeLastOrNull()
+                    }
+                }
+            }
+
             Scaffold(
                 topBar = {
                     val title = if (currentRoute is ModelSetup) "Model setup" else "ContextToCalendar"
