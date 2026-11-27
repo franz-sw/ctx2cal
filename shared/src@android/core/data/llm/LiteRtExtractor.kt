@@ -238,8 +238,8 @@ class LiteRtExtractor(
     }
 
     companion object {
-        const val MAX_NUM_TOKENS = 1024
-        const val MAX_OUTPUT_TOKENS = 256
+        const val MAX_NUM_TOKENS = 4096
+        const val MAX_OUTPUT_TOKENS = 1024
         const val CPU_THREAD_COUNT = 4
         const val DEFAULT_ATTEMPT_TIMEOUT_MS = 60_000L
     }
