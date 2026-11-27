@@ -36,10 +36,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -50,11 +51,13 @@ import de.franzsw.ctx2cal.core.domain.model.ModelStatus
 import de.franzsw.ctx2cal.core.presentation.design_system.components.AppActionButton
 import de.franzsw.ctx2cal.core.presentation.design_system.components.AppOutlinedActionButton
 import de.franzsw.ctx2cal.core.presentation.design_system.components.CustomElevatedCard
+import de.franzsw.ctx2cal.core.platform.plainTextOrNull
 import de.franzsw.ctx2cal.core.presentation.design_system.components.ErrorCard
 import de.franzsw.ctx2cal.core.presentation.design_system.components.HintCard
 import de.franzsw.ctx2cal.extract.domain.EventJsonParser
 import de.franzsw.ctx2cal.todayIso
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun ExtractScreen(
@@ -71,6 +74,8 @@ fun ExtractScreen(
     onBackToInput: () -> Unit,
     onOpenSetup: () -> Unit,
 ) {
+    val clipboard = LocalClipboard.current
+    val coroutineScope = rememberCoroutineScope()
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -97,7 +102,6 @@ fun ExtractScreen(
                     }
                 }
 
-                val clipboard = LocalClipboardManager.current
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -111,8 +115,10 @@ fun ExtractScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         TextButton(
                             onClick = {
-                                val pasted = clipboard.getText()?.text
-                                if (!pasted.isNullOrBlank()) onTextChange(pasted)
+                                coroutineScope.launch {
+                                    val pasted = clipboard.getClipEntry()?.plainTextOrNull()
+                                    if (!pasted.isNullOrBlank()) onTextChange(pasted)
+                                }
                             },
                         ) {
                             Text("Paste")

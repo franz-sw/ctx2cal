@@ -40,6 +40,7 @@ import org.jetbrains.compose.reload.DevelopmentEntryPoint
 import org.koin.compose.KoinApplication
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
+import org.koin.dsl.koinConfiguration
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,7 +51,7 @@ fun App(
 ) {
     AppTheme(darkTheme = isSystemInDarkTheme()) {
         KoinApplication(
-            application = {
+            configuration = koinConfiguration {
                 modules(appModule, platformModule)
             }
         ) {
