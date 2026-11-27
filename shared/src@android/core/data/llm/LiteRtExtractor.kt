@@ -81,7 +81,7 @@ class LiteRtExtractor(
             try {
                 val first = runConversationTurn(conversation, parts.userPrompt)
                 when (val parsed = EventJsonParser.parse(first)) {
-                    is EventJsonParser.Parsed.Event -> ExtractionResult.Success(parsed.draft)
+                    is EventJsonParser.Parsed.Event -> ExtractionResult.Success(parsed.draft, rawOutput = first)
                     is EventJsonParser.Parsed.NoEvent -> ExtractionResult.NoEvent
                     is EventJsonParser.Parsed.Invalid -> {
                         val retryPrompt = EventJsonParser.buildRetryPrompt(
@@ -91,7 +91,7 @@ class LiteRtExtractor(
                         )
                         val second = runConversationTurn(conversation, retryPrompt)
                         when (val retry = EventJsonParser.parse(second)) {
-                            is EventJsonParser.Parsed.Event -> ExtractionResult.Success(retry.draft)
+                            is EventJsonParser.Parsed.Event -> ExtractionResult.Success(retry.draft, rawOutput = second)
                             is EventJsonParser.Parsed.NoEvent -> ExtractionResult.NoEvent
                             is EventJsonParser.Parsed.Invalid -> ExtractionResult.Failure(
                                 reason = "Couldn't extract a valid event from this text. Try simplifying the wording or adding a clearer date/time.",

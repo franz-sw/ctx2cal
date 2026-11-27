@@ -34,6 +34,8 @@ sealed interface ExtractUiState {
         val noticeIsError: Boolean = false,
         val isExporting: Boolean = false,
         val isPartialExtraction: Boolean = false,
+        /** Raw model output that produced [draft]; surfaced for partial extraction. */
+        val rawOutput: String? = null,
     ) : ExtractUiState
     data class Error(
         val message: String,
@@ -157,6 +159,7 @@ class ExtractViewModel(
                         draft = result.draft,
                         inputText = text,
                         isPartialExtraction = !result.draft.isValid,
+                        rawOutput = result.rawOutput,
                     )
                     is ExtractionResult.NoEvent -> _state.value = ExtractUiState.Input(
                         text = text,

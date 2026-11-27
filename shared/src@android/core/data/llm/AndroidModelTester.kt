@@ -21,8 +21,10 @@ class AndroidModelTester(
         userPrompt: String,
     ): RawPromptResult {
         if (modelId == ModelCatalogEntries.NANO_MODEL_ID) {
-            val combined = if (systemPrompt.isNotBlank()) "$systemPrompt\n\n$userPrompt" else userPrompt
-            return nano.generateRaw(combined)
+            return nano.generateRaw(
+                systemPrompt = systemPrompt,
+                userPrompt = userPrompt,
+            )
         }
         val modelPath = downloader.downloadedModelPath(modelId)
             ?: return RawPromptResult.Failure("Model \"$modelId\" is not downloaded.")

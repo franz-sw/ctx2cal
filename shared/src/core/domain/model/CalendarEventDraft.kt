@@ -302,7 +302,11 @@ object IsoDateTime {
 
 /** Result of one extraction attempt against an on-device LLM backend. */
 sealed interface ExtractionResult {
-    data class Success(val draft: CalendarEventDraft) : ExtractionResult
+    data class Success(
+        val draft: CalendarEventDraft,
+        /** Last raw model output that produced [draft] (shown for partial extraction diagnostics). */
+        val rawOutput: String? = null,
+    ) : ExtractionResult
     data object NoEvent : ExtractionResult
     data class Failure(
         val reason: String,

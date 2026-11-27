@@ -33,7 +33,7 @@ actual val platformModule: Module = module {
     single<SettingsRepository> { AndroidSettingsRepository(androidContext()) }
     single<DeviceCapabilitiesProvider> { AndroidDeviceCapabilitiesProvider(androidContext(), get<SettingsRepository>()) }
     single<ModelDownloader> { ModelDownloaderAndroid(androidContext(), get<SettingsRepository>()) }
-    single { GeminiNanoExtractor() }
+    single { GeminiNanoExtractor(settings = get<SettingsRepository>()) }
     single {
         LiteRtExtractor(
             modelPathProvider = {

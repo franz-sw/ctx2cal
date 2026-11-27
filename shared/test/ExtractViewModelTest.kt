@@ -138,7 +138,8 @@ class ExtractViewModelTest {
                 location = "Pizzeria Roma",
             )
             val sharer = FakeSharer()
-            val vm = vm(FakeExtractor(ExtractionResult.Success(partialDraft)), sharer = sharer)
+            val raw = """{"title":"Team-Abendessen","start":"2026-11-27","end":"","location":"Pizzeria Roma"}"""
+            val vm = vm(FakeExtractor(ExtractionResult.Success(partialDraft, rawOutput = raw)), sharer = sharer)
             vm.onTextChange("Freitag Team-Abendessen in der Pizzeria Roma")
             vm.onExtract()
             advanceUntilIdle()
@@ -148,6 +149,7 @@ class ExtractViewModelTest {
             assertEquals(false, review.draft.isValid)
             assertEquals("Team-Abendessen", review.draft.title)
             assertEquals("Pizzeria Roma", review.draft.location)
+            assertEquals(raw, review.rawOutput)
 
             // Cannot share until missing fields are filled
             vm.onShare()
@@ -162,9 +164,39 @@ class ExtractViewModelTest {
             )
             review = assertIs<ExtractUiState.Review>(vm.state.value)
             assertEquals(true, review.draft.isValid)
+            assertEquals(raw, review.rawOutput)
             vm.onShare()
             assertEquals(1, sharer.shareCalls)
         }
+
+    @Test
+    fun `complete extraction carries rawOutput without marking partial`() = runTest(dispatcher) {
+        val raw = """{"title":"Dentist","start":"2026-11-25T10:00:00","end":"2026-11-25T11:00:00"}"""
+        val vm = vm(ExtractionResult.Success(draft, rawOutput = raw))
+        vm.onTextChange("Dentist at ten")
+        vm.onExtract()
+        advanceUntilIdle()
+        val review = assertIs<ExtractUiState.Review>(vm.state.value)
+        assertEquals(false, review.isPartialExtraction)
+        assertEquals(raw, review.rawOutput)
+    }
+
+    @Test
+    fun `partial extraction without raw output leaves Review rawOutput null`() = runTest(dispatcher) {
+        val partialDraft = CalendarEventDraft(
+            title = "Team-Abendessen",
+            startIso = "2026-11-27",
+            endIso = "",
+            allDay = false,
+        )
+        val vm = vm(ExtractionResult.Success(partialDraft))
+        vm.onTextChange("Team-Abendessen Freitag")
+        vm.onExtract()
+        advanceUntilIdle()
+        val review = assertIs<ExtractUiState.Review>(vm.state.value)
+        assertEquals(true, review.isPartialExtraction)
+        assertNull(review.rawOutput)
+    }
 
     @Test
     fun `no-event extraction stays on Input with notice and retains text`() = runTest(dispatcher) {

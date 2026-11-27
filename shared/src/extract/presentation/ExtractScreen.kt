@@ -222,6 +222,7 @@ fun ExtractScreen(
                             "Only the details found in the text were filled in. Complete the missing fields below to share or download.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
+                        state.rawOutput?.let { RawModelOutput(it) }
                     }
                 }
 
@@ -275,23 +276,7 @@ fun ExtractScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(state.message)
-                    if (state.rawOutput != null) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "Model output:",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        SelectionContainer {
-                            Text(
-                                state.rawOutput.takeIf { it.isNotBlank() } ?: "(empty response)",
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontFamily = FontFamily.Monospace,
-                                ),
-                            )
-                        }
-                    }
+                    state.rawOutput?.let { RawModelOutput(it) }
                 }
 
                 if (state.isNoModel) {
@@ -317,6 +302,25 @@ fun ExtractScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun RawModelOutput(rawOutput: String) {
+    Spacer(Modifier.height(8.dp))
+    Text(
+        "Model output:",
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.SemiBold,
+    )
+    Spacer(Modifier.height(4.dp))
+    SelectionContainer {
+        Text(
+            rawOutput.takeIf { it.isNotBlank() } ?: "(empty response)",
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontFamily = FontFamily.Monospace,
+            ),
+        )
     }
 }
 
