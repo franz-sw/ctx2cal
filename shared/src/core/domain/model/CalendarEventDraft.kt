@@ -52,6 +52,12 @@ data class CalendarEventDraft(
             ?: rangeError()
 
     val isValid: Boolean get() = validationError() == null
+
+    /**
+     * Exclusive RFC 5545 / CalendarContract end date (`YYYY-MM-DD`) for all-day events,
+     * derived from the inclusive [endIso] last day (`end + 1 day`).
+     */
+    fun exclusiveAllDayEndDate(): String = IsoDateTime.nextDate(IsoDateTime.toDateOnly(endIso))
 }
 
 /** Pure-Kotlin ISO-8601 validation, normalization, and calendar math (no kotlinx-datetime). */

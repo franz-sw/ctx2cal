@@ -87,22 +87,25 @@ class EventJsonParserTest {
         assertEquals("Abends", noDates.draft.description)
         assertEquals("Pizzeria Roma", noDates.draft.location)
 
-        // Date-only start without end
+        // Date-only start without end stays partial non-all-day
         val dateOnlyStart = EventJsonParser.parse(
-            """{"title":"Conference","start":"2026-11-27","end":"","allDay":false}"""
+            """{"title":"Conference","start":"2026-11-27","end":""}"""
         )
         assertIs<EventJsonParser.Parsed.Event>(dateOnlyStart)
         assertEquals("2026-11-27", dateOnlyStart.draft.startIso)
         assertEquals("", dateOnlyStart.draft.endIso)
+        assertTrue(!dateOnlyStart.draft.allDay)
+        assertTrue(!dateOnlyStart.draft.isValid)
 
-        // Both dates date-only without allDay (times unknown, user completes in form)
+        // Both dates date-only infer allDay = true even without allDay field
         val bothDateOnly = EventJsonParser.parse(
-            """{"title":"Workshop","start":"2026-11-27","end":"2026-11-28","allDay":false}"""
+            """{"title":"Workshop","start":"2026-11-27","end":"2026-11-28"}"""
         )
         assertIs<EventJsonParser.Parsed.Event>(bothDateOnly)
         assertEquals("2026-11-27", bothDateOnly.draft.startIso)
         assertEquals("2026-11-28", bothDateOnly.draft.endIso)
-        assertTrue(!bothDateOnly.draft.isValid)
+        assertTrue(bothDateOnly.draft.allDay)
+        assertTrue(bothDateOnly.draft.isValid)
     }
 
     @Test
@@ -119,15 +122,18 @@ class EventJsonParserTest {
     }
 
     @Test
-    fun `system instruction covers multilingual mixed text and partial events`() {
+    fun `system instruction covers multilingual all-day date-only and partial events without allDay field`() {
         val instruction = EventJsonParser.buildSystemInstruction()
         assertTrue(instruction.contains("Output ONLY"))
         assertTrue(instruction.contains("prose"))
-        assertTrue(instruction.contains("mixed"))
         assertTrue(instruction.contains("language", ignoreCase = true))
-        assertTrue(instruction.contains("Never guess"))
-        assertTrue(instruction.contains("Example:"))
-        assertTrue(instruction.contains("Partial example:"))
+        assertTrue(!instruction.contains("\"allDay\""))
+        assertTrue(instruction.contains("YYYY-MM-DD"))
+        assertTrue(instruction.contains("inclusive last day"))
+        assertTrue(instruction.contains("Never use 24:00"))
+        assertTrue(instruction.contains("Examples:"))
+        assertTrue(instruction.contains("2026-11-26T14:30:00"))
+        assertTrue(instruction.contains("2026-11-28"))
         assertTrue(instruction.contains("""{"noEvent":true}"""))
     }
 
@@ -226,10 +232,10 @@ class EventJsonParserTest {
     @Test
     fun `prompt parts include one-shot example and splitForConversation avoids duplicating system instruction`() {
         val parts = EventJsonParser.buildPromptParts("Team lunch tomorrow 12:00", "2026-11-25", "Europe/Berlin")
-        assertTrue(parts.systemInstruction.contains("Example:"))
+        assertTrue(parts.systemInstruction.contains("Examples:"))
         assertTrue(parts.systemInstruction.contains("Output ONLY"))
         assertTrue(parts.userPrompt.contains("Team lunch tomorrow 12:00"))
-        assertTrue(!parts.userPrompt.contains("Example:"))
+        assertTrue(!parts.userPrompt.contains("Examples:"))
 
         val combined = EventJsonParser.buildPrompt("Team lunch tomorrow 12:00", "2026-11-25", "Europe/Berlin")
         val split = EventJsonParser.splitForConversation(combined)
@@ -278,5 +284,52 @@ class EventJsonParserTest {
             systemInstruction = "   ",
         )
         assertEquals(EventJsonParser.buildSystemInstruction(), blankFallback.systemInstruction)
+    }
+
+    @Test
+    fun `collapses whitespace and newlines in title`() {
+        val raw = """{"title":"  Team\n  Sync\tMeeting  ","start":"2026-11-25T10:00:00","end":"2026-11-25T11:00:00"}"""
+        val parsed = EventJsonParser.parse(raw)
+        assertIs<EventJsonParser.Parsed.Event>(parsed)
+        assertEquals("Team Sync Meeting", parsed.draft.title)
+    }
+
+    @Test
+    fun `normalizes same-day 00-00 to 24-00 into date-only all-day draft`() {
+        val raw = """{"title":"Holiday","start":"2026-11-28T00:00:00","end":"2026-11-28T24:00:00","allDay":false}"""
+        val parsed = EventJsonParser.parse(raw)
+        assertIs<EventJsonParser.Parsed.Event>(parsed)
+        assertEquals("2026-11-28", parsed.draft.startIso)
+        assertEquals("2026-11-28", parsed.draft.endIso)
+        assertTrue(parsed.draft.allDay)
+        assertTrue(parsed.draft.isValid)
+
+        val shortTime = """{"title":"Holiday","start":"2026-11-28T00:00","end":"2026-11-28T24:00"}"""
+        val parsedShort = EventJsonParser.parse(shortTime)
+        assertIs<EventJsonParser.Parsed.Event>(parsedShort)
+        assertEquals("2026-11-28", parsedShort.draft.startIso)
+        assertEquals("2026-11-28", parsedShort.draft.endIso)
+        assertTrue(parsedShort.draft.allDay)
+    }
+
+    @Test
+    fun `rolls non-all-day T24-00 end over to next day 00-00-00`() {
+        val raw = """{"title":"Late Shift","start":"2026-11-28T18:00:00","end":"2026-11-28T24:00:00"}"""
+        val parsed = EventJsonParser.parse(raw)
+        assertIs<EventJsonParser.Parsed.Event>(parsed)
+        assertEquals("2026-11-28T18:00:00", parsed.draft.startIso)
+        assertEquals("2026-11-29T00:00:00", parsed.draft.endIso)
+        assertTrue(!parsed.draft.allDay)
+        assertTrue(parsed.draft.isValid)
+    }
+
+    @Test
+    fun `still honors explicit allDay true for legacy or custom prompts`() {
+        val raw = """{"title":"Day Off","start":"2026-11-28T09:00:00","end":"2026-11-28T17:00:00","allDay":true}"""
+        val parsed = EventJsonParser.parse(raw)
+        assertIs<EventJsonParser.Parsed.Event>(parsed)
+        assertEquals("2026-11-28", parsed.draft.startIso)
+        assertEquals("2026-11-28", parsed.draft.endIso)
+        assertTrue(parsed.draft.allDay)
     }
 }

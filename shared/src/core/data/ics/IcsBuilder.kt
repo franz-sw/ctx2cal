@@ -13,13 +13,8 @@ object IcsBuilder {
         val dtEnd: String
         if (draft.allDay) {
             val startDate = IsoDateTime.toDateOnly(draft.startIso)
-            val rawEndDate = IsoDateTime.toDateOnly(draft.endIso)
-            // RFC 5545 DTEND for VALUE=DATE is exclusive: a single-day event ends on the next day.
-            val exclusiveEndDate = if (rawEndDate <= startDate) {
-                IsoDateTime.nextDate(startDate)
-            } else {
-                rawEndDate
-            }
+            // RFC 5545 DTEND for VALUE=DATE is exclusive: draft.endIso is the inclusive last day.
+            val exclusiveEndDate = draft.exclusiveAllDayEndDate()
             dtStart = "DTSTART;VALUE=DATE:${IsoDateTime.toBasic(startDate)}"
             dtEnd = "DTEND;VALUE=DATE:${IsoDateTime.toBasic(exclusiveEndDate)}"
         } else {

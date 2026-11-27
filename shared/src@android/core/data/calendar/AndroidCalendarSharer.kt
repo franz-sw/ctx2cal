@@ -52,10 +52,9 @@ class AndroidCalendarSharer(private val context: Context) : CalendarSharer {
 
     private fun resolveMillis(draft: CalendarEventDraft): Pair<Long, Long> {
         if (draft.allDay) {
-            // CalendarContract expects all-day begin/end at UTC midnight.
+            // CalendarContract expects all-day begin/end at UTC midnight with exclusive end.
             val startDate = LocalDate.parse(IsoDateTime.toDateOnly(draft.startIso))
-            val rawEndDate = LocalDate.parse(IsoDateTime.toDateOnly(draft.endIso))
-            val exclusiveEnd = if (!rawEndDate.isAfter(startDate)) startDate.plusDays(1) else rawEndDate
+            val exclusiveEnd = LocalDate.parse(draft.exclusiveAllDayEndDate())
             val beginMs = startDate.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
             val endMs = exclusiveEnd.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
             return beginMs to endMs

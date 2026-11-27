@@ -15,7 +15,7 @@ import kotlinx.serialization.json.JsonPrimitive
  * unknown fields may be left empty `""` so the user can fill them in manually):
  * ```
  * { "title": "...", "start": "2026-11-25T10:00:00", "end": "2026-11-25T11:00:00",
- *   "allDay": false, "description": "...", "location": "..." }
+ *   "description": "...", "location": "..." }
  * ```
  * `{"noEvent": true}` means the text contains no event.
  */
@@ -32,6 +32,13 @@ object EventJsonParser {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val FENCE_RE = Regex("""```(?:json)?\s*\r?\n([\s\S]*?)```""", RegexOption.IGNORE_CASE)
+    private val WHITESPACE_RE = Regex("""\s+""")
+    private val START_OF_DAY_00_RE = Regex(
+        """^(\d{4}-\d{2}-\d{2})[T ]00:00(?::00)?(?:\.\d{1,9})?(?:Z|[+-]\d{2}:?\d{2})?$"""
+    )
+    private val END_OF_DAY_24_RE = Regex(
+        """^(\d{4}-\d{2}-\d{2})[T ]24:00(?::00)?(?:\.\d{1,9})?(?:Z|[+-]\d{2}:?\d{2})?$"""
+    )
 
     sealed interface Parsed {
         data class Event(val draft: CalendarEventDraft) : Parsed
@@ -96,13 +103,18 @@ object EventJsonParser {
             }
         }
 
-        val title = obj["title"].primitiveContent()?.trim() ?: ""
-        val startRaw = obj["start"].primitiveContent()?.trim() ?: ""
-        val endRaw = obj["end"].primitiveContent()?.trim() ?: ""
-        val allDay = obj["allDay"].primitiveContent()?.trim()
+        val title = obj["title"].primitiveContent()
+            ?.replace(WHITESPACE_RE, " ")
+            ?.trim()
+            ?: ""
+        val rawStart = obj["start"].primitiveContent()?.trim() ?: ""
+        val rawEnd = obj["end"].primitiveContent()?.trim() ?: ""
+        val explicitAllDayTrue = obj["allDay"].primitiveContent()?.trim()
             ?.equals("true", ignoreCase = true) ?: false
         val description = obj["description"].primitiveContent()?.trim() ?: ""
         val location = obj["location"].primitiveContent()?.trim() ?: ""
+
+        val (startRaw, endRaw) = normalizeEndOfDay24(rawStart, rawEnd)
 
         if (startRaw.isNotEmpty() && !IsoDateTime.isValid(startRaw)) {
             return Parsed.Invalid("Invalid start: $startRaw")
@@ -110,6 +122,13 @@ object EventJsonParser {
         if (endRaw.isNotEmpty() && !IsoDateTime.isValid(endRaw)) {
             return Parsed.Invalid("Invalid end: $endRaw")
         }
+
+        val allDay = explicitAllDayTrue || (
+            startRaw.isNotEmpty() &&
+                endRaw.isNotEmpty() &&
+                IsoDateTime.isDateOnly(startRaw) &&
+                IsoDateTime.isDateOnly(endRaw)
+            )
 
         val hasAnyField = title.isNotEmpty() ||
             startRaw.isNotEmpty() ||
@@ -154,6 +173,26 @@ object EventJsonParser {
         return Parsed.Event(draft)
     }
 
+    private fun normalizeEndOfDay24(rawStart: String, rawEnd: String): Pair<String, String> {
+        val start00Match = START_OF_DAY_00_RE.matchEntire(rawStart)
+        val end24Match = END_OF_DAY_24_RE.matchEntire(rawEnd)
+        if (start00Match != null && end24Match != null) {
+            val startDate = start00Match.groupValues[1]
+            val endDate = end24Match.groupValues[1]
+            if (startDate == endDate && IsoDateTime.isValid(startDate)) {
+                return startDate to endDate
+            }
+        }
+        return roll24ToNextDay(rawStart) to roll24ToNextDay(rawEnd)
+    }
+
+    private fun roll24ToNextDay(value: String): String {
+        val m = END_OF_DAY_24_RE.matchEntire(value) ?: return value
+        val date = m.groupValues[1]
+        if (!IsoDateTime.isValid(date)) return value
+        return "${IsoDateTime.nextDate(date)}T00:00:00"
+    }
+
     private fun JsonElement?.primitiveContent(): String? {
         if (this == null || this is JsonNull) return null
         return (this as? JsonPrimitive)?.content
@@ -166,19 +205,20 @@ object EventJsonParser {
         """
 Extract the main calendar event from the text (any language), if not clear, pick first. Output ONLY single valid JSON—no prose, code fences, or thinking.
 
-Schema: {"title":string,"start":"YYYY-MM-DDTHH:mm:ss"|"YYYY-MM-DD"|"","end":"YYYY-MM-DDTHH:mm:ss"|"YYYY-MM-DD"|"","allDay":boolean,"description":string,"location":string}
+Schema: {"title":string,"start":"YYYY-MM-DDTHH:mm:ss"|"YYYY-MM-DD"|"","end":"YYYY-MM-DDTHH:mm:ss"|"YYYY-MM-DD"|"","description":string,"location":string}
 
 Rules:
 - Keep text fields in the original language. Resolve relative dates/times against Today and timezone.
 - Ignore chatter. Educated guesses may be allowed (e.g. endtime +1h for meeting); use "" for unknown fields.
-- "allDay":true ONLY if explicitly all-day or based on context if no specific time metioned, else false.
+- For all-day events, use YYYY-MM-DD for both start and end (inclusive last day). Never use 24:00.
 - "description": concise agenda, links, or notes only.
 - if timezone is mentioned in input, use this
 - If zero event details exist, output ONLY: {"noEvent":true}
 
 Examples:
-{"title":"Dentist","start":"2026-11-26T14:30:00","end":"2026-11-26T15:30:00","allDay":false,"description":"","location":"Main St Clinic"}
-{"title":"Team-Abendessen","start":"2026-11-27","end":"","allDay":false,"description":"Abends, Uhrzeit offen","location":"Pizzeria Roma"}
+{"title":"Dentist","start":"2026-11-26T14:30:00","end":"2026-11-26T15:30:00","description":"","location":"Main St Clinic"}
+{"title":"Conference","start":"2026-11-28","end":"2026-11-29","description":"Annual summit","location":"Berlin"}
+{"title":"Team-Abendessen","start":"2026-11-27","end":"","description":"Abends, Uhrzeit offen","location":"Pizzeria Roma"}
         """.trimIndent()
 
     /** Bounded user message containing date/timezone reference and truncated pasted text. */

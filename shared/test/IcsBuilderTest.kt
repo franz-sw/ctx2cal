@@ -38,7 +38,7 @@ class IcsBuilderTest {
     }
 
     @Test
-    fun `builds an all-day event with VALUE=DATE`() {
+    fun `builds a multi-day all-day event with inclusive endIso exported as exclusive VALUE=DATE DTEND`() {
         val draft = CalendarEventDraft(
             title = "Holiday",
             startIso = "2026-12-25",
@@ -47,7 +47,7 @@ class IcsBuilderTest {
         )
         val ics = IcsBuilder.build(draft, "u2@x", "20261125T120000Z")
         assertContains(ics, "DTSTART;VALUE=DATE:20261225")
-        assertContains(ics, "DTEND;VALUE=DATE:20261226")
+        assertContains(ics, "DTEND;VALUE=DATE:20261227")
     }
 
     @Test

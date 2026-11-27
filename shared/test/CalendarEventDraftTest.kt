@@ -155,4 +155,31 @@ class CalendarEventDraftTest {
         val draft = timed(title = "", start = "not-a-date")
         assertEquals("Title must not be blank", draft.validationError())
     }
+
+    @Test
+    fun `exclusiveAllDayEndDate returns day after inclusive endIso`() {
+        val singleDay = CalendarEventDraft(
+            title = "Holiday",
+            startIso = "2026-12-25",
+            endIso = "2026-12-25",
+            allDay = true,
+        )
+        assertEquals("2026-12-26", singleDay.exclusiveAllDayEndDate())
+
+        val multiDay = CalendarEventDraft(
+            title = "Conference",
+            startIso = "2026-12-25",
+            endIso = "2026-12-27",
+            allDay = true,
+        )
+        assertEquals("2026-12-28", multiDay.exclusiveAllDayEndDate())
+
+        val yearRollover = CalendarEventDraft(
+            title = "New Year",
+            startIso = "2026-12-31",
+            endIso = "2026-12-31",
+            allDay = true,
+        )
+        assertEquals("2027-01-01", yearRollover.exclusiveAllDayEndDate())
+    }
 }
