@@ -31,7 +31,10 @@ object EventJsonParser {
     )
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
-    private val FENCE_RE = Regex("""```(?:json)?\s*\r?\n([\s\S]*?)```""", RegexOption.IGNORE_CASE)
+    private val FENCE_RE = Regex("""```(?:json)?[ \t]*\r?\n?([\s\S]*?)```""", RegexOption.IGNORE_CASE)
+    private val FENCE_LANGUAGE_RE = Regex("""[A-Za-z0-9_-]+""")
+    private val NUMBER_RE = Regex("""-?\d+(\.\d+)?([eE][+-]?\d+)?""")
+    private val KNOWN_FIELDS = setOf("title", "start", "end", "allDay", "description", "location", "noEvent")
     private val WHITESPACE_RE = Regex("""\s+""")
     private val START_OF_DAY_00_RE = Regex(
         """^(\d{4}-\d{2}-\d{2})[T ]00:00(?::00)?(?:\.\d{1,9})?(?:Z|[+-]\d{2}:?\d{2})?$"""
@@ -46,30 +49,73 @@ object EventJsonParser {
         data class Invalid(val reason: String) : Parsed
     }
 
-    /** Strips Markdown code fences / surrounding prose around the JSON object. */
+    /**
+     * Strips Markdown code fences (closed or truncated/unclosed) and surrounding
+     * prose, truncating everything before the first `{` and after its matching
+     * `}` when present. Truncated objects without a matching `}` are returned
+     * from the first `{` to the end so [parse] can salvage complete fields.
+     */
     fun unwrap(raw: String): String {
         val trimmed = raw.trim()
         val fenced = FENCE_RE.find(trimmed)?.groupValues?.get(1)?.trim()
-        val candidate = fenced ?: trimmed
+        val candidate = when {
+            fenced != null -> fenced
+            trimmed.contains("```") -> stripUnclosedFence(trimmed)
+            else -> trimmed
+        }
+        return extractObject(candidate)
+    }
+
+    private fun stripUnclosedFence(text: String): String {
+        val fenceStart = text.indexOf("```")
+        if (fenceStart < 0) return text
+        val content = stripFenceOpening(text.substring(fenceStart + 3))
+        val closing = content.indexOf("```")
+        return (if (closing >= 0) content.substring(0, closing) else content).trim()
+    }
+
+    private fun stripFenceOpening(afterOpening: String): String {
+        val newline = afterOpening.indexOf('\n')
+        if (newline >= 0) {
+            val firstLine = afterOpening.substring(0, newline).trim()
+            if (firstLine.isEmpty() || firstLine.matches(FENCE_LANGUAGE_RE)) {
+                return afterOpening.substring(newline + 1)
+            }
+        } else {
+            val brace = afterOpening.indexOf('{')
+            if (brace > 0) {
+                if (afterOpening.substring(0, brace).trim().matches(FENCE_LANGUAGE_RE)) {
+                    return afterOpening.substring(brace)
+                }
+            } else if (afterOpening.trim().matches(FENCE_LANGUAGE_RE)) {
+                return ""
+            }
+        }
+        val sameLine = Regex("""^\s*[A-Za-z0-9_-]+\s+(?=\{)""").find(afterOpening)
+        if (sameLine != null) return afterOpening.substring(sameLine.range.last + 1)
+        return afterOpening
+    }
+
+    private fun extractObject(candidate: String): String {
         val start = candidate.indexOf('{')
         if (start < 0) return candidate
-        // Find matching closing brace while respecting JSON strings/escapes.
+        // Find matching closing brace while respecting strings/escapes.
         var depth = 0
-        var inString = false
+        var stringQuote: Char? = null
         var escaped = false
         for (i in start until candidate.length) {
             val c = candidate[i]
-            if (inString) {
+            if (stringQuote != null) {
                 if (escaped) {
                     escaped = false
                 } else if (c == '\\') {
                     escaped = true
-                } else if (c == '"') {
-                    inString = false
+                } else if (c == stringQuote) {
+                    stringQuote = null
                 }
             } else {
                 when (c) {
-                    '"' -> inString = true
+                    '"', '\'' -> stringQuote = c
                     '{' -> depth++
                     '}' -> {
                         depth--
@@ -78,41 +124,53 @@ object EventJsonParser {
                 }
             }
         }
-        val end = candidate.lastIndexOf('}')
-        return if (end > start) candidate.substring(start, end + 1) else candidate
+        // No matching `}` (truncated output): keep from the first `{` so complete
+        // fields can still be recovered by salvage in parse().
+        return candidate.substring(start).trimEnd()
     }
 
     fun parse(raw: String): Parsed {
+        val unwrapped = unwrap(raw)
         val element = try {
-            json.parseToJsonElement(unwrap(raw))
+            json.parseToJsonElement(unwrapped)
         } catch (e: Exception) {
-            return Parsed.Invalid("Malformed JSON: ${e.message ?: "unexpected format"}")
+            // Model output is often truncated or otherwise malformed: recover
+            // every complete field that was already sent before giving up.
+            val salvaged = salvageJsonObject(unwrapped)
+                ?: return Parsed.Invalid("Malformed JSON: ${e.message ?: "unexpected format"}")
+            return validateObject(salvaged)
         }
         val obj = element as? JsonObject
             ?: return Parsed.Invalid("Expected a JSON object")
+        return validateObject(obj)
+    }
 
-        if (obj["noEvent"].primitiveContent()?.equals("true", ignoreCase = true) == true) {
+    private fun validateObject(obj: JsonObject): Parsed {
+        fun field(name: String): JsonElement? =
+            obj[name] ?: obj.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
+
+        if (field("noEvent").primitiveContent()?.equals("true", ignoreCase = true) == true) {
             return Parsed.NoEvent
         }
 
         // Non-primitive (object/array) values for scalar fields are invalid, never coerced.
-        for (field in listOf("title", "start", "end", "allDay", "description", "location")) {
-            val el = obj[field]
+        for (fieldName in listOf("title", "start", "end", "allDay", "description", "location")) {
+            val el = field(fieldName)
             if (el != null && el !is JsonNull && el !is JsonPrimitive) {
-                return Parsed.Invalid("Invalid $field: expected a primitive value")
+                return Parsed.Invalid("Invalid $fieldName: expected a primitive value")
             }
         }
 
-        val title = obj["title"].primitiveContent()
+        val title = field("title").primitiveContent()
             ?.replace(WHITESPACE_RE, " ")
             ?.trim()
             ?: ""
-        val rawStart = obj["start"].primitiveContent()?.trim() ?: ""
-        val rawEnd = obj["end"].primitiveContent()?.trim() ?: ""
-        val explicitAllDayTrue = obj["allDay"].primitiveContent()?.trim()
+        val rawStart = field("start").primitiveContent()?.trim() ?: ""
+        val rawEnd = field("end").primitiveContent()?.trim() ?: ""
+        val explicitAllDayTrue = field("allDay").primitiveContent()?.trim()
             ?.equals("true", ignoreCase = true) ?: false
-        val description = obj["description"].primitiveContent()?.trim() ?: ""
-        val location = obj["location"].primitiveContent()?.trim() ?: ""
+        val description = field("description").primitiveContent()?.trim() ?: ""
+        val location = field("location").primitiveContent()?.trim() ?: ""
 
         val (startRaw, endRaw) = normalizeEndOfDay24(rawStart, rawEnd)
 
@@ -171,6 +229,133 @@ object EventJsonParser {
             location = location,
         )
         return Parsed.Event(draft)
+    }
+
+    /**
+     * Recovers complete known fields from truncated/malformed JSON, e.g. output
+     * that breaks mid-object, mid-key or mid-value, has a trailing comma, or is
+     * missing commas/closing braces. Only pairs whose value is complete (closed
+     * string, or a full `true`/`false`/`null`/number literal) are kept; the
+     * incomplete trailing pair is dropped so earlier fields survive validation.
+     * Returns null when no known field could be recovered.
+     */
+    private fun salvageJsonObject(text: String): JsonObject? {
+        val start = text.indexOf('{')
+        if (start < 0) return null
+        var i = start + 1
+        val fields = LinkedHashMap<String, JsonElement>()
+        outer@ while (i < text.length) {
+            while (i < text.length && (text[i].isWhitespace() || text[i] == ',')) i++
+            if (i >= text.length) break
+            if (text[i] == '}') break
+            // Key must be a complete quoted string; a truncated key ends recovery.
+            val (key, afterKey) = parseStringToken(text, i) ?: break@outer
+            i = afterKey
+            while (i < text.length && text[i].isWhitespace()) i++
+            if (i >= text.length || text[i] != ':') break@outer
+            i++
+            while (i < text.length && text[i].isWhitespace()) i++
+            if (i >= text.length) break@outer
+            val canonicalKey = KNOWN_FIELDS.firstOrNull { it.equals(key, ignoreCase = true) }
+            when (text[i]) {
+                '"', '\'' -> {
+                    // A truncated string value is dropped, not closed blindly, so a
+                    // cut-off datetime cannot poison the fields recovered before it.
+                    val (value, afterValue) = parseStringToken(text, i) ?: break@outer
+                    i = afterValue
+                    if (canonicalKey != null) fields[canonicalKey] = JsonPrimitive(value)
+                }
+                '{', '[' -> {
+                    // Preserve strictness: a non-primitive value for a known scalar
+                    // field is invalid; skip balanced values of unknown fields.
+                    if (canonicalKey != null) return null
+                    i = skipBalancedValue(text, i) ?: break@outer
+                }
+                else -> {
+                    val tokenStart = i
+                    while (i < text.length && !text[i].isWhitespace() && text[i] != ',' && text[i] != '}' && text[i] != ']') i++
+                    val token = text.substring(tokenStart, i)
+                    val isLiteral = token.equals("true", ignoreCase = true) ||
+                        token.equals("false", ignoreCase = true) ||
+                        token.equals("null", ignoreCase = true)
+                    if (!isLiteral && !NUMBER_RE.matches(token)) break@outer
+                    if (canonicalKey != null) {
+                        fields[canonicalKey] =
+                            if (token.equals("null", ignoreCase = true)) JsonNull else JsonPrimitive(token)
+                    }
+                }
+            }
+        }
+        return if (fields.isEmpty()) null else JsonObject(fields)
+    }
+
+    /** Parses a complete quoted string (also single-quoted) at [start]; null when truncated. */
+    private fun parseStringToken(text: String, start: Int): Pair<String, Int>? {
+        if (start >= text.length) return null
+        val quote = text[start]
+        if (quote != '"' && quote != '\'') return null
+        val sb = StringBuilder()
+        var i = start + 1
+        while (i < text.length) {
+            val c = text[i]
+            when {
+                c == '\\' -> {
+                    if (i + 1 >= text.length) return null
+                    when (val esc = text[i + 1]) {
+                        '"' -> sb.append('"')
+                        '\'' -> sb.append('\'')
+                        '\\' -> sb.append('\\')
+                        '/' -> sb.append('/')
+                        'b' -> sb.append('\b')
+                        'f' -> sb.append(12.toChar())
+                        'n' -> sb.append('\n')
+                        'r' -> sb.append('\r')
+                        't' -> sb.append('\t')
+                        'u' -> {
+                            if (i + 5 >= text.length) return null
+                            val code = text.substring(i + 2, i + 6).toIntOrNull(16) ?: return null
+                            sb.append(code.toChar())
+                            i += 4
+                        }
+                        else -> sb.append(esc)
+                    }
+                    i += 2
+                }
+                c == quote -> return sb.toString() to (i + 1)
+                else -> {
+                    sb.append(c)
+                    i++
+                }
+            }
+        }
+        return null
+    }
+
+    /** Returns the index just past a balanced `{...}`/`[...]` value at [start], or null if truncated. */
+    private fun skipBalancedValue(text: String, start: Int): Int? {
+        var depth = 0
+        var stringQuote: Char? = null
+        var escaped = false
+        var i = start
+        while (i < text.length) {
+            val c = text[i]
+            if (stringQuote != null) {
+                if (escaped) escaped = false
+                else if (c == '\\') escaped = true
+                else if (c == stringQuote) stringQuote = null
+            } else {
+                when (c) {
+                    '"', '\'' -> stringQuote = c
+                    '{', '[' -> depth++
+                    '}', ']' -> {
+                        depth--
+                        if (depth == 0) return i + 1
+                    }
+                }
+            }
+            i++
+        }
+        return null
     }
 
     private fun normalizeEndOfDay24(rawStart: String, rawEnd: String): Pair<String, String> {

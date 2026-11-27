@@ -332,4 +332,143 @@ class EventJsonParserTest {
         assertEquals("2026-11-28", parsed.draft.endIso)
         assertTrue(parsed.draft.allDay)
     }
+
+    @Test
+    fun `parses when closing brace is missing but all fields are complete`() {
+        val raw = """{"title":"Dentist","start":"2026-11-25T10:00:00","end":"2026-11-25T11:00:00","location":"Clinic" """
+        val parsed = EventJsonParser.parse(raw)
+        assertIs<EventJsonParser.Parsed.Event>(parsed)
+        assertEquals("Dentist", parsed.draft.title)
+        assertEquals("2026-11-25T10:00:00", parsed.draft.startIso)
+        assertEquals("2026-11-25T11:00:00", parsed.draft.endIso)
+        assertEquals("Clinic", parsed.draft.location)
+        assertTrue(parsed.draft.isValid)
+    }
+
+    @Test
+    fun `recovers complete fields when output is truncated mid-value`() {
+        // Truncated inside the "end" string: the incomplete field is dropped so
+        // the already-sent title/start survive as a partial event.
+        val raw = """{"title":"Dentist","start":"2026-11-25T10:00:00","end":"2026-11-25T11:00:"""
+        val parsed = EventJsonParser.parse(raw)
+        assertIs<EventJsonParser.Parsed.Event>(parsed)
+        assertEquals("Dentist", parsed.draft.title)
+        assertEquals("2026-11-25T10:00:00", parsed.draft.startIso)
+        assertEquals("", parsed.draft.endIso)
+        assertTrue(!parsed.draft.isValid)
+    }
+
+    @Test
+    fun `recovers complete fields when output is truncated mid-key`() {
+        val raw = """{"title":"Dentist","start":"2026-11-25T10:00:00","end":"2026-11-25T11:00:00","descri"""
+        val parsed = EventJsonParser.parse(raw)
+        assertIs<EventJsonParser.Parsed.Event>(parsed)
+        assertEquals("Dentist", parsed.draft.title)
+        assertEquals("2026-11-25T10:00:00", parsed.draft.startIso)
+        assertEquals("2026-11-25T11:00:00", parsed.draft.endIso)
+        assertEquals("", parsed.draft.description)
+    }
+
+    @Test
+    fun `recovers complete fields when output is truncated after a comma`() {
+        val raw = """{"title":"Dentist","start":"2026-11-25T10:00:00","""
+        val parsed = EventJsonParser.parse(raw)
+        assertIs<EventJsonParser.Parsed.Event>(parsed)
+        assertEquals("Dentist", parsed.draft.title)
+        assertEquals("2026-11-25T10:00:00", parsed.draft.startIso)
+        assertEquals("", parsed.draft.endIso)
+    }
+
+    @Test
+    fun `recovers fields with escaped quotes and braces when truncated`() {
+        val raw = """{"title":"Meet \"team\" {now}","start":"2026-11-25T10:00:00","end":"2026-11-25T11:00:00","location":"Room {A}"""
+        val parsed = EventJsonParser.parse(raw)
+        assertIs<EventJsonParser.Parsed.Event>(parsed)
+        assertEquals("Meet \"team\" {now}", parsed.draft.title)
+        assertEquals("2026-11-25T10:00:00", parsed.draft.startIso)
+        // Truncated inside location: dropped, not closed blindly.
+        assertEquals("", parsed.draft.location)
+    }
+
+    @Test
+    fun `honours noEvent when closing brace is missing`() {
+        assertIs<EventJsonParser.Parsed.NoEvent>(EventJsonParser.parse("""{"noEvent":true"""))
+    }
+
+    @Test
+    fun `strips unclosed code fences`() {
+        val fenced = "```json\n{\"title\":\"A\",\"start\":\"2026-01-01T09:00:00\",\"end\":\"2026-01-01T10:00:00\"}"
+        val parsed = EventJsonParser.parse(fenced)
+        assertIs<EventJsonParser.Parsed.Event>(parsed)
+        assertEquals("A", parsed.draft.title)
+
+        val sameLine = "```json {\"title\":\"B\",\"start\":\"2026-01-01T09:00:00\",\"end\":\"2026-01-01T10:00:00\"}"
+        val parsedSameLine = EventJsonParser.parse(sameLine)
+        assertIs<EventJsonParser.Parsed.Event>(parsedSameLine)
+        assertEquals("B", parsedSameLine.draft.title)
+
+        val truncatedFence = "```json\n{\"title\":\"C\",\"start\":\"2026-01-01T09:00:00\",\"end\":\"2026-01-01T10:00:"
+        val parsedTruncated = EventJsonParser.parse(truncatedFence)
+        assertIs<EventJsonParser.Parsed.Event>(parsedTruncated)
+        assertEquals("C", parsedTruncated.draft.title)
+        assertEquals("", parsedTruncated.draft.endIso)
+    }
+
+    @Test
+    fun `recovers fields with trailing comma missing commas or single quotes`() {
+        val trailingComma = """{"title":"X","start":"2026-11-25T10:00:00","end":"2026-11-25T11:00:00",}"""
+        val parsedTrailing = EventJsonParser.parse(trailingComma)
+        assertIs<EventJsonParser.Parsed.Event>(parsedTrailing)
+        assertEquals("X", parsedTrailing.draft.title)
+
+        val missingCommas = """{"title":"X" "start":"2026-11-25T10:00:00" "end":"2026-11-25T11:00:00"}"""
+        val parsedMissing = EventJsonParser.parse(missingCommas)
+        assertIs<EventJsonParser.Parsed.Event>(parsedMissing)
+        assertEquals("2026-11-25T10:00:00", parsedMissing.draft.startIso)
+
+        val singleQuoted = "{'title':'X','start':'2026-11-25T10:00:00','end':'2026-11-25T11:00:00'"
+        val parsedSingle = EventJsonParser.parse(singleQuoted)
+        assertIs<EventJsonParser.Parsed.Event>(parsedSingle)
+        assertEquals("X", parsedSingle.draft.title)
+    }
+
+    @Test
+    fun `accepts capitalized field names`() {
+        val raw = """{"Title":"X","Start":"2026-11-25T10:00:00","End":"2026-11-25T11:00:00"}"""
+        val parsed = EventJsonParser.parse(raw)
+        assertIs<EventJsonParser.Parsed.Event>(parsed)
+        assertEquals("X", parsed.draft.title)
+        assertEquals("2026-11-25T10:00:00", parsed.draft.startIso)
+    }
+
+    @Test
+    fun `truncates anything before first brace and after last matching brace`() {
+        // Rule: output must start with "{" and end with "}". Anything before the
+        // first "{" (e.g. "My Output: ") and after the matching "}" is cut off.
+        val prefixed = "My Output: {\"title\":\"A\",\"start\":\"2026-01-01T09:00:00\",\"end\":\"2026-01-01T10:00:00\"} etc."
+        val parsed = EventJsonParser.parse(prefixed)
+        assertIs<EventJsonParser.Parsed.Event>(parsed)
+        assertEquals("A", parsed.draft.title)
+        assertEquals("2026-01-01T09:00:00", parsed.draft.startIso)
+        assertEquals("2026-01-01T10:00:00", parsed.draft.endIso)
+
+        // Same prefix rule combined with a missing closing brace: complete
+        // fields after the first "{" are still recovered.
+        val truncatedPrefixed = "My Output: {\"title\":\"B\",\"start\":\"2026-01-01T09:00:00\",\"end\":\"2026-01-01T10:00:00\""
+        val parsedTruncated = EventJsonParser.parse(truncatedPrefixed)
+        assertIs<EventJsonParser.Parsed.Event>(parsedTruncated)
+        assertEquals("B", parsedTruncated.draft.title)
+        assertEquals("2026-01-01T10:00:00", parsedTruncated.draft.endIso)
+    }
+
+    @Test
+    fun `does not fabricate fields from truncated incomplete output`() {
+        // No complete field was sent yet: nothing to recover.
+        assertIs<EventJsonParser.Parsed.Invalid>(EventJsonParser.parse("""{"title":"Dent"""))
+        // A cut-off boolean literal is not a complete noEvent marker.
+        assertIs<EventJsonParser.Parsed.Invalid>(EventJsonParser.parse("""{"noEvent":tru"""))
+        // Still invalid when there is no object at all.
+        assertIs<EventJsonParser.Parsed.Invalid>(EventJsonParser.parse("no json here"))
+        assertIs<EventJsonParser.Parsed.Invalid>(EventJsonParser.parse("{title: dentist"))
+    }
 }
