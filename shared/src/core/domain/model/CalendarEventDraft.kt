@@ -249,5 +249,10 @@ object IsoDateTime {
 sealed interface ExtractionResult {
     data class Success(val draft: CalendarEventDraft) : ExtractionResult
     data object NoEvent : ExtractionResult
-    data class Failure(val reason: String, val isNoModel: Boolean = false) : ExtractionResult
+    data class Failure(
+        val reason: String,
+        val isNoModel: Boolean = false,
+        /** Last raw model output (e.g. invalid JSON), when one was produced. */
+        val rawOutput: String? = null,
+    ) : ExtractionResult
 }

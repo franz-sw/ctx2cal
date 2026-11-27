@@ -164,16 +164,16 @@ object EventJsonParser {
     /** Concise system instruction supporting multilingual, prose/mixed, and partial event extraction. */
     fun buildSystemInstruction(): String =
         """
-Extract the main calendar event from the text (any language). Output ONLY single valid JSON—no prose, code fences, or thinking.
+Extract the main calendar event from the text (any language), if not clear, pick first. Output ONLY single valid JSON—no prose, code fences, or thinking.
 
 Schema: {"title":string,"start":"YYYY-MM-DDTHH:mm:ss"|"YYYY-MM-DD"|"","end":"YYYY-MM-DDTHH:mm:ss"|"YYYY-MM-DD"|"","allDay":boolean,"description":string,"location":string}
 
 Rules:
 - Keep text fields in the original language. Resolve relative dates/times against Today and timezone.
-- Ignore chatter. Never guess; use "" for unknown fields.
-- Dates/times: 24h format, date-only if time unknown, "" if date unknown. Set "end":"" if no end/duration stated. If time lacks a date, set start/end to "" and note time in "description".
-- "allDay":true ONLY if explicitly all-day, else false.
+- Ignore chatter. Educated guesses may be allowed (e.g. endtime +1h for meeting); use "" for unknown fields.
+- "allDay":true ONLY if explicitly all-day or based on context if no specific time metioned, else false.
 - "description": concise agenda, links, or notes only.
+- if timezone is mentioned in input, use this
 - If zero event details exist, output ONLY: {"noEvent":true}
 
 Examples:

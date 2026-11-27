@@ -94,7 +94,8 @@ class LiteRtExtractor(
                             is EventJsonParser.Parsed.Event -> ExtractionResult.Success(retry.draft)
                             is EventJsonParser.Parsed.NoEvent -> ExtractionResult.NoEvent
                             is EventJsonParser.Parsed.Invalid -> ExtractionResult.Failure(
-                                "Couldn't extract a valid event from this text. Try simplifying the wording or adding a clearer date/time."
+                                reason = "Couldn't extract a valid event from this text. Try simplifying the wording or adding a clearer date/time.",
+                                rawOutput = second,
                             )
                         }
                     }

@@ -194,6 +194,30 @@ class ExtractViewModelTest {
     }
 
     @Test
+    fun `failure surfaces Error with raw model output`() = runTest(dispatcher) {
+        val raw = """{title: dentist, broken}"""
+        val vm = vm(ExtractionResult.Failure("Couldn't extract a valid event.", rawOutput = raw))
+        vm.onTextChange("Dentist at ten")
+        vm.onExtract()
+        advanceUntilIdle()
+        val err = assertIs<ExtractUiState.Error>(vm.state.value)
+        assertEquals("Couldn't extract a valid event.", err.message)
+        assertEquals(raw, err.rawOutput)
+        assertEquals(false, err.isNoModel)
+        assertEquals("Dentist at ten", err.inputText)
+    }
+
+    @Test
+    fun `failure without raw output leaves Error rawOutput null`() = runTest(dispatcher) {
+        val vm = vm(ExtractionResult.Failure("Boom", isNoModel = false))
+        vm.onTextChange("Dentist at ten")
+        vm.onExtract()
+        advanceUntilIdle()
+        val err = assertIs<ExtractUiState.Error>(vm.state.value)
+        assertNull(err.rawOutput)
+    }
+
+    @Test
     fun `cancel extract returns to Input with text intact`() = runTest(dispatcher) {
         val gate = CompletableDeferred<Unit>()
         val extractor = FakeExtractor(ExtractionResult.Success(draft), gate = gate)

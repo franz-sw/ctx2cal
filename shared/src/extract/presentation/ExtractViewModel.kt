@@ -35,7 +35,13 @@ sealed interface ExtractUiState {
         val isExporting: Boolean = false,
         val isPartialExtraction: Boolean = false,
     ) : ExtractUiState
-    data class Error(val message: String, val isNoModel: Boolean, val inputText: String) : ExtractUiState
+    data class Error(
+        val message: String,
+        val isNoModel: Boolean,
+        val inputText: String,
+        /** Last raw model output, when a failure followed model output. */
+        val rawOutput: String? = null,
+    ) : ExtractUiState
 }
 
 class ExtractViewModel(
@@ -156,8 +162,12 @@ class ExtractViewModel(
                         text = text,
                         notice = "No calendar event was found in this text. Try including a clear date or time.",
                     )
-                    is ExtractionResult.Failure -> _state.value =
-                        ExtractUiState.Error(result.reason, result.isNoModel, text)
+                    is ExtractionResult.Failure -> _state.value = ExtractUiState.Error(
+                        message = result.reason,
+                        isNoModel = result.isNoModel,
+                        inputText = text,
+                        rawOutput = result.rawOutput,
+                    )
                 }
             } catch (_: TimeoutCancellationException) {
                 if (generation == extractGeneration) {
