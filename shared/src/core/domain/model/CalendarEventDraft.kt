@@ -58,6 +58,29 @@ data class CalendarEventDraft(
      * derived from the inclusive [endIso] last day (`end + 1 day`).
      */
     fun exclusiveAllDayEndDate(): String = IsoDateTime.nextDate(IsoDateTime.toDateOnly(endIso))
+
+    /**
+     * Returns a copy with [newStartIso] adopted as start, auto-correcting the end
+     * after a manual start edit:
+     * 1. If end date is before start date, end date is set to start date (time preserved).
+     * 2. If end is still before start, end is set to start + 1h.
+     * Invalid/blank end is left untouched.
+     */
+    fun withStart(newStartIso: String): CalendarEventDraft {
+        if (!IsoDateTime.isValid(newStartIso) || endIso.isBlank() || !IsoDateTime.isValid(endIso)) {
+            return copy(startIso = newStartIso)
+        }
+        var correctedEnd = endIso
+        // Step 1: end date before start date -> move end date to start date.
+        if (IsoDateTime.toDateOnly(correctedEnd) < IsoDateTime.toDateOnly(newStartIso)) {
+            correctedEnd = IsoDateTime.withDate(correctedEnd, IsoDateTime.toDateOnly(newStartIso), allDay)
+        }
+        // Step 2: end still before start -> end = start + 1h.
+        if (!allDay && IsoDateTime.compare(correctedEnd, newStartIso) < 0) {
+            correctedEnd = IsoDateTime.plusHours(newStartIso, 1)
+        }
+        return copy(startIso = newStartIso, endIso = correctedEnd)
+    }
 }
 
 /** Pure-Kotlin ISO-8601 validation, normalization, and calendar math (no kotlinx-datetime). */
@@ -173,6 +196,32 @@ object IsoDateTime {
         val fallback = toDateOnly(fallbackDateIso).takeIf { DATE_RE.matches(it) } ?: "2026-01-01"
         val date = toDateOnly(iso).takeIf { DATE_RE.matches(it) } ?: fallback
         return "${date}T${pad2(hour.coerceIn(0, 23))}:${pad2(minute.coerceIn(0, 59))}:00"
+    }
+
+    /** Returns [iso] shifted by [hours] hours (preserving minutes/seconds, rolling the date when needed). */
+    fun plusHours(iso: String, hours: Int): String {
+        val v = iso.trim()
+        if (!isValid(v)) return normalize(v)
+        val dm = DATE_RE.matchEntire(toDateOnly(v)) ?: return normalize(v)
+        val y = dm.groupValues[1].toIntOrNull() ?: return normalize(v)
+        val mo = dm.groupValues[2].toIntOrNull() ?: return normalize(v)
+        val d = dm.groupValues[3].toIntOrNull() ?: return normalize(v)
+        if (!isValidDate(y, mo, d)) return normalize(v)
+        var hh = 0
+        var mm = 0
+        var ss = 0
+        DATETIME_RE.matchEntire(v)?.let { m ->
+            hh = m.groupValues[4].toIntOrNull() ?: 0
+            mm = m.groupValues[5].toIntOrNull() ?: 0
+            ss = m.groupValues[6].takeIf { it.isNotEmpty() }?.toIntOrNull() ?: 0
+            if (hh !in 0..23 || mm !in 0..59 || ss !in 0..59) return normalize(v)
+        }
+        val days = daysFromCivil(y, mo, d)
+        val totalHours = days * 24L + hh.toLong() + hours.toLong()
+        val newDays = floorDiv(totalHours, 24L)
+        val newHour = (totalHours - newDays * 24L).toInt()
+        val (ny, nmo, nd) = civilFromDays(newDays)
+        return "${pad4(ny)}-${pad2(nmo)}-${pad2(nd)}T${pad2(newHour)}:${pad2(mm)}:${pad2(ss)}"
     }
 
     /** Returns the next calendar day (`YYYY-MM-DD`) for RFC 5545 exclusive all-day DTEND. */

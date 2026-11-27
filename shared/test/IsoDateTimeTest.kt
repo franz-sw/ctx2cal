@@ -143,4 +143,23 @@ class IsoDateTimeTest {
         assertEquals("2026-11-27T15:30:00", IsoDateTime.withTime("", 15, 30, fallbackDateIso = "2026-11-27"))
         assertEquals("2026-11-25T15:30:00", IsoDateTime.withTime("2026-11-25", 15, 30, fallbackDateIso = "2026-11-27"))
     }
+
+    @Test
+    fun `plusHours shifts within same day`() {
+        assertEquals("2026-11-25T11:00:00", IsoDateTime.plusHours("2026-11-25T10:00:00", 1))
+        assertEquals("2026-11-25T12:30:00", IsoDateTime.plusHours("2026-11-25T10:30:00", 2))
+    }
+
+    @Test
+    fun `plusHours rolls date on midnight crossover`() {
+        assertEquals("2026-11-26T00:30:00", IsoDateTime.plusHours("2026-11-25T23:30:00", 1))
+        assertEquals("2026-12-01T00:00:00", IsoDateTime.plusHours("2026-11-30T23:00:00", 1))
+        assertEquals("2027-01-01T00:00:00", IsoDateTime.plusHours("2026-12-31T23:00:00", 1))
+    }
+
+    @Test
+    fun `plusHours preserves minutes and seconds and handles leap day`() {
+        assertEquals("2026-11-25T12:15:45", IsoDateTime.plusHours("2026-11-25T10:15:45", 2))
+        assertEquals("2024-02-29T00:00:00", IsoDateTime.plusHours("2024-02-28T23:00:00", 1))
+    }
 }

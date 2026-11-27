@@ -182,4 +182,76 @@ class CalendarEventDraftTest {
         )
         assertEquals("2027-01-01", yearRollover.exclusiveAllDayEndDate())
     }
+
+    @Test
+    fun `withStart moves end date to start date when end date is lower but end time stays after`() {
+        val draft = timed(start = "2026-11-25T10:00:00", end = "2026-11-26T11:00:00")
+        // Start date moved to 27th (past end date 26th), start time kept at 10:00.
+        val updated = draft.withStart("2026-11-27T10:00:00")
+        assertEquals("2026-11-27T10:00:00", updated.startIso)
+        assertEquals("2026-11-27T11:00:00", updated.endIso)
+    }
+
+    @Test
+    fun `withStart sets end to start plus 1h when end is still before after date fix`() {
+        val draft = timed(start = "2026-11-25T10:00:00", end = "2026-11-25T11:00:00")
+        // Start date moved to 26th with later time 12:00 via withDate-style new start.
+        // End date bumped to 26th (11:00) which is still before start (12:00).
+        val updated = draft.withStart("2026-11-26T12:00:00")
+        assertEquals("2026-11-26T12:00:00", updated.startIso)
+        assertEquals("2026-11-26T13:00:00", updated.endIso)
+    }
+
+    @Test
+    fun `withStart sets end to start plus 1h when start time edit passes end same day`() {
+        val draft = timed(start = "2026-11-25T10:00:00", end = "2026-11-25T11:00:00")
+        val updated = draft.withStart("2026-11-25T12:00:00")
+        assertEquals("2026-11-25T12:00:00", updated.startIso)
+        assertEquals("2026-11-25T13:00:00", updated.endIso)
+    }
+
+    @Test
+    fun `withStart leaves end untouched when end stays after start`() {
+        val draft = timed(start = "2026-11-25T10:00:00", end = "2026-11-25T11:00:00")
+        val updated = draft.withStart("2026-11-25T10:30:00")
+        assertEquals("2026-11-25T10:30:00", updated.startIso)
+        assertEquals("2026-11-25T11:00:00", updated.endIso)
+    }
+
+    @Test
+    fun `withStart leaves equal end time as is`() {
+        val draft = timed(start = "2026-11-25T10:00:00", end = "2026-11-25T11:00:00")
+        val updated = draft.withStart("2026-11-25T11:00:00")
+        assertEquals("2026-11-25T11:00:00", updated.endIso)
+    }
+
+    @Test
+    fun `withStart rolls end date when start plus 1h crosses midnight`() {
+        val draft = timed(start = "2026-11-25T10:00:00", end = "2026-11-25T11:00:00")
+        val updated = draft.withStart("2026-11-25T23:30:00")
+        assertEquals("2026-11-25T23:30:00", updated.startIso)
+        assertEquals("2026-11-26T00:30:00", updated.endIso)
+    }
+
+    @Test
+    fun `withStart moves all-day end date to start date`() {
+        val draft = CalendarEventDraft(
+            title = "Trip",
+            startIso = "2026-12-25",
+            endIso = "2026-12-26",
+            allDay = true,
+        )
+        val updated = draft.withStart("2026-12-27")
+        assertEquals("2026-12-27", updated.startIso)
+        assertEquals("2026-12-27", updated.endIso)
+    }
+
+    @Test
+    fun `withStart leaves blank or invalid end untouched`() {
+        val blankEnd = timed(start = "2026-11-25T10:00:00", end = "")
+        assertEquals("", blankEnd.withStart("2026-11-26T12:00:00").endIso)
+
+        val invalidEnd = timed(start = "2026-11-25T10:00:00", end = "not-a-date")
+        assertEquals("not-a-date", invalidEnd.withStart("2026-11-26T12:00:00").endIso)
+    }
 }

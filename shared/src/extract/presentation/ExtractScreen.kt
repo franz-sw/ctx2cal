@@ -497,7 +497,7 @@ fun EventForm(draft: CalendarEventDraft, onDraftChanged: (CalendarEventDraft) ->
                                 val pickedDate = IsoDateTime.fromEpochMillisUtcDate(millis)
                                 val updated = IsoDateTime.withDate(currentIso, pickedDate, draft.allDay)
                                 onDraftChanged(
-                                    if (isStart) draft.copy(startIso = updated)
+                                    if (isStart) draft.withStart(updated)
                                     else draft.copy(endIso = updated)
                                 )
                             }
@@ -539,7 +539,7 @@ fun EventForm(draft: CalendarEventDraft, onDraftChanged: (CalendarEventDraft) ->
                                 fallbackDateIso = fallbackDate,
                             )
                             onDraftChanged(
-                                if (isStart) draft.copy(startIso = updated)
+                                if (isStart) draft.withStart(updated)
                                 else draft.copy(endIso = updated)
                             )
                             activePicker = null
