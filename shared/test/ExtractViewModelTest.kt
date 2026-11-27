@@ -124,7 +124,47 @@ class ExtractViewModelTest {
         assertIs<ExtractUiState.Review>(review)
         assertEquals("Dentist", review.draft.title)
         assertEquals("Dentist at ten", review.inputText)
+        assertEquals(false, review.isPartialExtraction)
     }
+
+    @Test
+    fun `partial extraction reaches Review with isPartialExtraction true and allows user to complete draft`() =
+        runTest(dispatcher) {
+            val partialDraft = CalendarEventDraft(
+                title = "Team-Abendessen",
+                startIso = "2026-11-27",
+                endIso = "",
+                allDay = false,
+                location = "Pizzeria Roma",
+            )
+            val sharer = FakeSharer()
+            val vm = vm(FakeExtractor(ExtractionResult.Success(partialDraft)), sharer = sharer)
+            vm.onTextChange("Freitag Team-Abendessen in der Pizzeria Roma")
+            vm.onExtract()
+            advanceUntilIdle()
+
+            var review = assertIs<ExtractUiState.Review>(vm.state.value)
+            assertEquals(true, review.isPartialExtraction)
+            assertEquals(false, review.draft.isValid)
+            assertEquals("Team-Abendessen", review.draft.title)
+            assertEquals("Pizzeria Roma", review.draft.location)
+
+            // Cannot share until missing fields are filled
+            vm.onShare()
+            assertEquals(0, sharer.shareCalls)
+
+            // User completes start/end times and shares
+            vm.onDraftChanged(
+                review.draft.copy(
+                    startIso = "2026-11-27T19:00:00",
+                    endIso = "2026-11-27T21:00:00",
+                )
+            )
+            review = assertIs<ExtractUiState.Review>(vm.state.value)
+            assertEquals(true, review.draft.isValid)
+            vm.onShare()
+            assertEquals(1, sharer.shareCalls)
+        }
 
     @Test
     fun `no-event extraction stays on Input with notice and retains text`() = runTest(dispatcher) {

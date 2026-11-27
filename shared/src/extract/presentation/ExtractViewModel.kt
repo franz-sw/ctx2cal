@@ -33,6 +33,7 @@ sealed interface ExtractUiState {
         val notice: String? = null,
         val noticeIsError: Boolean = false,
         val isExporting: Boolean = false,
+        val isPartialExtraction: Boolean = false,
     ) : ExtractUiState
     data class Error(val message: String, val isNoModel: Boolean, val inputText: String) : ExtractUiState
 }
@@ -146,7 +147,11 @@ class ExtractViewModel(
                 }
                 if (generation != extractGeneration) return@launch
                 when (result) {
-                    is ExtractionResult.Success -> _state.value = ExtractUiState.Review(result.draft, text)
+                    is ExtractionResult.Success -> _state.value = ExtractUiState.Review(
+                        draft = result.draft,
+                        inputText = text,
+                        isPartialExtraction = !result.draft.isValid,
+                    )
                     is ExtractionResult.NoEvent -> _state.value = ExtractUiState.Input(
                         text = text,
                         notice = "No calendar event was found in this text. Try including a clear date or time.",

@@ -29,7 +29,7 @@ data class CalendarEventDraft(
 
     fun rangeError(): String? {
         if (startError() != null || endError() != null) return null
-        if (!allDay && IsoDateTime.isDateOnly(startIso) != IsoDateTime.isDateOnly(endIso)) {
+        if (!allDay && (IsoDateTime.isDateOnly(startIso) || IsoDateTime.isDateOnly(endIso))) {
             return "Start and end must both include a time (or mark as All day)"
         }
         val cmp = if (allDay) {
@@ -62,6 +62,25 @@ object IsoDateTime {
     )
 
     fun isDateOnly(value: String): Boolean = DATE_RE.matches(value.trim())
+
+    /** True when [value] is a valid ISO datetime containing an explicit time component. */
+    fun hasTime(value: String): Boolean {
+        val v = value.trim()
+        return !DATE_RE.matches(v) && isValid(v)
+    }
+
+    /** Returns the English weekday name (e.g. `"Friday"`) for a valid ISO date/datetime, or null. */
+    fun dayOfWeekName(iso: String): String? {
+        val m = DATE_RE.matchEntire(toDateOnly(iso)) ?: return null
+        val y = m.groupValues[1].toIntOrNull() ?: return null
+        val mo = m.groupValues[2].toIntOrNull() ?: return null
+        val d = m.groupValues[3].toIntOrNull() ?: return null
+        if (!isValidDate(y, mo, d)) return null
+        val days = daysFromCivil(y, mo, d)
+        // 1970-01-01 (day 0) was a Thursday.
+        val idx = (((days % 7L) + 7L) % 7L).toInt()
+        return WEEKDAYS[idx]
+    }
 
     fun isValid(value: String): Boolean {
         val v = value.trim()
@@ -143,9 +162,10 @@ object IsoDateTime {
         return "${dateIso}T${pad2(hh)}:${pad2(mm)}:00"
     }
 
-    /** Replaces the hour and minute while preserving the date. */
-    fun withTime(iso: String, hour: Int, minute: Int): String {
-        val date = toDateOnly(iso).takeIf { DATE_RE.matches(it) } ?: "2026-01-01"
+    /** Replaces the hour and minute while preserving the date (or falling back to [fallbackDateIso]). */
+    fun withTime(iso: String, hour: Int, minute: Int, fallbackDateIso: String = "2026-01-01"): String {
+        val fallback = toDateOnly(fallbackDateIso).takeIf { DATE_RE.matches(it) } ?: "2026-01-01"
+        val date = toDateOnly(iso).takeIf { DATE_RE.matches(it) } ?: fallback
         return "${date}T${pad2(hour.coerceIn(0, 23))}:${pad2(minute.coerceIn(0, 59))}:00"
     }
 
@@ -222,6 +242,7 @@ object IsoDateTime {
     private fun pad4(n: Int): String = n.toString().padStart(4, '0')
 
     private const val MILLIS_PER_DAY = 86_400_000L
+    private val WEEKDAYS = arrayOf("Thursday", "Friday", "Saturday", "Sunday", "Monday", "Tuesday", "Wednesday")
 }
 
 /** Result of one extraction attempt against an on-device LLM backend. */

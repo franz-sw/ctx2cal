@@ -116,4 +116,31 @@ class IsoDateTimeTest {
         assertTrue(IsoDateTime.isDateOnly("2026-11-25"))
         assertFalse(IsoDateTime.isDateOnly("2026-11-25T10:00:00"))
     }
+
+    @Test
+    fun `hasTime is true only for valid datetimes with time`() {
+        assertTrue(IsoDateTime.hasTime("2026-11-25T10:00:00"))
+        assertTrue(IsoDateTime.hasTime("2026-11-25T10:00"))
+        assertFalse(IsoDateTime.hasTime("2026-11-25"))
+        assertFalse(IsoDateTime.hasTime(""))
+        assertFalse(IsoDateTime.hasTime("not-a-date"))
+        assertFalse(IsoDateTime.hasTime("2026-02-29T10:00:00"))
+    }
+
+    @Test
+    fun `dayOfWeekName computes accurate weekday names`() {
+        assertEquals("Thursday", IsoDateTime.dayOfWeekName("1970-01-01"))
+        assertEquals("Wednesday", IsoDateTime.dayOfWeekName("2026-11-25"))
+        assertEquals("Friday", IsoDateTime.dayOfWeekName("2026-11-27"))
+        assertEquals("Friday", IsoDateTime.dayOfWeekName("2026-11-27T14:30:00"))
+        assertEquals("Thursday", IsoDateTime.dayOfWeekName("2024-02-29"))
+        assertEquals(null, IsoDateTime.dayOfWeekName("2026-02-29"))
+        assertEquals(null, IsoDateTime.dayOfWeekName(""))
+    }
+
+    @Test
+    fun `withTime uses fallbackDateIso when source has no date`() {
+        assertEquals("2026-11-27T15:30:00", IsoDateTime.withTime("", 15, 30, fallbackDateIso = "2026-11-27"))
+        assertEquals("2026-11-25T15:30:00", IsoDateTime.withTime("2026-11-25", 15, 30, fallbackDateIso = "2026-11-27"))
+    }
 }

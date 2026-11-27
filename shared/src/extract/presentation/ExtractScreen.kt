@@ -53,6 +53,7 @@ import de.franzsw.ctx2cal.core.presentation.design_system.components.CustomEleva
 import de.franzsw.ctx2cal.core.presentation.design_system.components.ErrorCard
 import de.franzsw.ctx2cal.core.presentation.design_system.components.HintCard
 import de.franzsw.ctx2cal.extract.domain.EventJsonParser
+import de.franzsw.ctx2cal.todayIso
 import kotlinx.coroutines.delay
 
 @Composable
@@ -204,6 +205,18 @@ fun ExtractScreen(
             }
 
             is ExtractUiState.Review -> {
+                if (state.isPartialExtraction && !state.draft.isValid) {
+                    HintCard(
+                        hintTitle = "Partial event extracted",
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            "Only the details found in the text were filled in. Complete the missing fields below to share or download.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+
                 CustomElevatedCard(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         EventForm(draft = state.draft, onDraftChanged = onDraftChanged)
@@ -445,8 +458,10 @@ fun EventForm(draft: CalendarEventDraft, onDraftChanged: (CalendarEventDraft) ->
         PickerTarget.START_DATE, PickerTarget.END_DATE -> {
             val isStart = activePicker == PickerTarget.START_DATE
             val currentIso = if (isStart) draft.startIso else draft.endIso
+            val siblingIso = if (isStart) draft.endIso else draft.startIso
             val dateState = rememberDatePickerState(
-                initialSelectedDateMillis = IsoDateTime.toEpochMillisUtcMidnight(currentIso),
+                initialSelectedDateMillis = IsoDateTime.toEpochMillisUtcMidnight(currentIso)
+                    ?: IsoDateTime.toEpochMillisUtcMidnight(siblingIso),
             )
             DatePickerDialog(
                 onDismissRequest = { activePicker = null },
@@ -475,6 +490,10 @@ fun EventForm(draft: CalendarEventDraft, onDraftChanged: (CalendarEventDraft) ->
         PickerTarget.START_TIME, PickerTarget.END_TIME -> {
             val isStart = activePicker == PickerTarget.START_TIME
             val currentIso = if (isStart) draft.startIso else draft.endIso
+            val siblingIso = if (isStart) draft.endIso else draft.startIso
+            val fallbackDate = IsoDateTime.toDateOnly(siblingIso)
+                .takeIf { IsoDateTime.isValid(it) }
+                ?: todayIso()
             val (initialHour, initialMinute) = IsoDateTime.extractHourMinute(currentIso)
             val timeState = rememberTimePickerState(
                 initialHour = initialHour,
@@ -488,7 +507,12 @@ fun EventForm(draft: CalendarEventDraft, onDraftChanged: (CalendarEventDraft) ->
                 confirmButton = {
                     TextButton(
                         onClick = {
-                            val updated = IsoDateTime.withTime(currentIso, timeState.hour, timeState.minute)
+                            val updated = IsoDateTime.withTime(
+                                iso = currentIso,
+                                hour = timeState.hour,
+                                minute = timeState.minute,
+                                fallbackDateIso = fallbackDate,
+                            )
                             onDraftChanged(
                                 if (isStart) draft.copy(startIso = updated)
                                 else draft.copy(endIso = updated)
@@ -516,8 +540,12 @@ private fun DateTimePickerRow(
     onPickTime: () -> Unit,
 ) {
     val dateDisplay = if (IsoDateTime.isValid(isoValue)) IsoDateTime.toDateOnly(isoValue) else isoValue.ifBlank { "Select date" }
-    val (hh, mm) = IsoDateTime.extractHourMinute(isoValue)
-    val timeDisplay = "${hh.toString().padStart(2, '0')}:${mm.toString().padStart(2, '0')}"
+    val timeDisplay = if (IsoDateTime.hasTime(isoValue)) {
+        val (hh, mm) = IsoDateTime.extractHourMinute(isoValue)
+        "${hh.toString().padStart(2, '0')}:${mm.toString().padStart(2, '0')}"
+    } else {
+        "Select time"
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(

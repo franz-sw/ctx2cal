@@ -78,6 +78,13 @@ class CalendarEventDraftTest {
         val endDateOnly = timed(start = "2026-11-25T10:00:00", end = "2026-11-25")
         assertNotNull(endDateOnly.rangeError())
         assertNotNull(endDateOnly.validationError())
+
+        val bothDateOnly = timed(start = "2026-11-25", end = "2026-11-26")
+        assertNotNull(bothDateOnly.rangeError())
+        assertEquals(
+            "Start and end must both include a time (or mark as All day)",
+            bothDateOnly.rangeError(),
+        )
     }
 
     @Test

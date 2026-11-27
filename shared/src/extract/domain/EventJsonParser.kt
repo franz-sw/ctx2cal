@@ -9,9 +9,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
- * Strict single-event JSON contract produced by the on-device model.
+ * Single-event JSON contract produced by the on-device model.
  *
- * Expected shape (one event per paste — other dates in the text are ignored):
+ * Expected shape (one event per paste — other dates in the text are ignored;
+ * unknown fields may be left empty `""` so the user can fill them in manually):
  * ```
  * { "title": "...", "start": "2026-11-25T10:00:00", "end": "2026-11-25T11:00:00",
  *   "allDay": false, "description": "...", "location": "..." }
@@ -22,7 +23,7 @@ object EventJsonParser {
 
     const val MAX_INPUT_CHARS = 2000
     const val MAX_RETRY_RAW_CHARS = 250
-    const val MAX_RETRY_ORIGINAL_CHARS = 2600
+    const val MAX_RETRY_ORIGINAL_CHARS = 3500
 
     data class PromptParts(
         val systemInstruction: String,
@@ -96,24 +97,51 @@ object EventJsonParser {
         }
 
         val title = obj["title"].primitiveContent()?.trim() ?: ""
-        if (title.isBlank()) return Parsed.Invalid("Missing title")
-
         val startRaw = obj["start"].primitiveContent()?.trim() ?: ""
         val endRaw = obj["end"].primitiveContent()?.trim() ?: ""
-        if (!IsoDateTime.isValid(startRaw)) {
-            return Parsed.Invalid("Missing or invalid start: $startRaw")
-        }
-        if (!IsoDateTime.isValid(endRaw)) {
-            return Parsed.Invalid("Missing or invalid end: $endRaw")
-        }
-
         val allDay = obj["allDay"].primitiveContent()?.trim()
             ?.equals("true", ignoreCase = true) ?: false
-        val description = obj["description"].primitiveContent() ?: ""
-        val location = obj["location"].primitiveContent() ?: ""
+        val description = obj["description"].primitiveContent()?.trim() ?: ""
+        val location = obj["location"].primitiveContent()?.trim() ?: ""
 
-        val startNormalized = if (allDay) IsoDateTime.toDateOnly(startRaw) else IsoDateTime.normalize(startRaw)
-        val endNormalized = if (allDay) IsoDateTime.toDateOnly(endRaw) else IsoDateTime.normalize(endRaw)
+        if (startRaw.isNotEmpty() && !IsoDateTime.isValid(startRaw)) {
+            return Parsed.Invalid("Invalid start: $startRaw")
+        }
+        if (endRaw.isNotEmpty() && !IsoDateTime.isValid(endRaw)) {
+            return Parsed.Invalid("Invalid end: $endRaw")
+        }
+
+        val hasAnyField = title.isNotEmpty() ||
+            startRaw.isNotEmpty() ||
+            endRaw.isNotEmpty() ||
+            description.isNotEmpty() ||
+            location.isNotEmpty()
+        if (!hasAnyField) {
+            return Parsed.Invalid("No event fields found")
+        }
+
+        val startNormalized = when {
+            startRaw.isEmpty() -> ""
+            allDay -> IsoDateTime.toDateOnly(startRaw)
+            else -> IsoDateTime.normalize(startRaw)
+        }
+        val endNormalized = when {
+            endRaw.isEmpty() -> ""
+            allDay -> IsoDateTime.toDateOnly(endRaw)
+            else -> IsoDateTime.normalize(endRaw)
+        }
+
+        if (startNormalized.isNotEmpty() && endNormalized.isNotEmpty()) {
+            if (!allDay && IsoDateTime.isDateOnly(startNormalized) != IsoDateTime.isDateOnly(endNormalized)) {
+                return Parsed.Invalid("Start and end must both include a time (or mark as All day)")
+            }
+            val cmp = if (allDay) {
+                IsoDateTime.toDateOnly(endNormalized).compareTo(IsoDateTime.toDateOnly(startNormalized))
+            } else {
+                IsoDateTime.compare(endNormalized, startNormalized)
+            }
+            if (cmp < 0) return Parsed.Invalid("End must not be before start")
+        }
 
         val draft = CalendarEventDraft(
             title = title,
@@ -123,7 +151,7 @@ object EventJsonParser {
             description = description,
             location = location,
         )
-        return draft.validationError()?.let { Parsed.Invalid(it) } ?: Parsed.Event(draft)
+        return Parsed.Event(draft)
     }
 
     private fun JsonElement?.primitiveContent(): String? {
@@ -133,22 +161,35 @@ object EventJsonParser {
 
     fun boundInput(text: String): String = text.trim().take(MAX_INPUT_CHARS)
 
-    /** Concise system instruction with schema and one-shot JSON example for chat-templated models. */
+    /** Concise system instruction supporting multilingual, prose/mixed, and partial event extraction. */
     fun buildSystemInstruction(): String =
         """
-        You extract exactly one calendar event from text. Output ONLY a single JSON object and stop. No prose, no code fences, no thinking.
-        Schema: {"title":string,"start":"YYYY-MM-DDTHH:mm:ss" or "YYYY-MM-DD","end":"YYYY-MM-DDTHH:mm:ss" or "YYYY-MM-DD","allDay":boolean,"description":string,"location":string}
-        Example: {"title":"Dentist","start":"2026-11-26T14:30:00","end":"2026-11-26T15:30:00","allDay":false,"description":"","location":"Main St Clinic"}
-        If there is no event, output exactly: {"noEvent":true}
+Extract the main calendar event from the text (any language). Output ONLY single valid JSON—no prose, code fences, or thinking.
+
+Schema: {"title":string,"start":"YYYY-MM-DDTHH:mm:ss"|"YYYY-MM-DD"|"","end":"YYYY-MM-DDTHH:mm:ss"|"YYYY-MM-DD"|"","allDay":boolean,"description":string,"location":string}
+
+Rules:
+- Keep text fields in the original language. Resolve relative dates/times against Today and timezone.
+- Ignore chatter. Never guess; use "" for unknown fields.
+- Dates/times: 24h format, date-only if time unknown, "" if date unknown. Set "end":"" if no end/duration stated. If time lacks a date, set start/end to "" and note time in "description".
+- "allDay":true ONLY if explicitly all-day, else false.
+- "description": concise agenda, links, or notes only.
+- If zero event details exist, output ONLY: {"noEvent":true}
+
+Examples:
+{"title":"Dentist","start":"2026-11-26T14:30:00","end":"2026-11-26T15:30:00","allDay":false,"description":"","location":"Main St Clinic"}
+{"title":"Team-Abendessen","start":"2026-11-27","end":"","allDay":false,"description":"Abends, Uhrzeit offen","location":"Pizzeria Roma"}
         """.trimIndent()
 
     /** Bounded user message containing date/timezone reference and truncated pasted text. */
-    fun buildUserPrompt(text: String, todayIso: String, timeZoneId: String): String =
-        """
-        Today is $todayIso in timezone $timeZoneId. Resolve relative dates against today.
-        Text:
-        ${boundInput(text)}
+    fun buildUserPrompt(text: String, todayIso: String, timeZoneId: String): String {
+        val weekdaySuffix = IsoDateTime.dayOfWeekName(todayIso)?.let { " ($it)" } ?: ""
+        return """
+            Today is $todayIso$weekdaySuffix in timezone $timeZoneId. Resolve relative dates against today.
+            Text:
+            ${boundInput(text)}
         """.trimIndent()
+    }
 
     fun buildPromptParts(
         text: String,
@@ -189,7 +230,7 @@ object EventJsonParser {
             appendLine(originalPrompt.take(MAX_RETRY_ORIGINAL_CHARS))
             appendLine()
         }
-        appendLine("Your previous output was rejected: $reason. Output ONLY a corrected JSON object for the same event, no prose, no code fences.")
+        appendLine("Your previous output was rejected: $reason. Output ONLY a corrected JSON object for the same event (leave unknown fields as \"\"), no prose, no code fences.")
         appendLine("Previous output:")
         append(previousRaw.trim().take(MAX_RETRY_RAW_CHARS))
     }

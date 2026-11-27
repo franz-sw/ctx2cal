@@ -32,13 +32,77 @@ class EventJsonParserTest {
     }
 
     @Test
-    fun `rejects missing title and bad dates`() {
+    fun `rejects empty objects and bad dates`() {
         assertIs<EventJsonParser.Parsed.Invalid>(
-            EventJsonParser.parse("""{"start":"2026-01-01T09:00:00","end":"2026-01-01T10:00:00"}""")
+            EventJsonParser.parse("""{}""")
+        )
+        assertIs<EventJsonParser.Parsed.Invalid>(
+            EventJsonParser.parse("""{"title":"","start":"","end":"","allDay":false,"description":"","location":""}""")
         )
         assertIs<EventJsonParser.Parsed.Invalid>(
             EventJsonParser.parse("""{"title":"X","start":"next Friday","end":"2026-01-01T10:00:00"}""")
         )
+        assertIs<EventJsonParser.Parsed.Invalid>(
+            EventJsonParser.parse("""{"title":"X","start":"2026-02-29","end":""}""")
+        )
+        assertIs<EventJsonParser.Parsed.Invalid>(
+            EventJsonParser.parse("""{"title":"X","start":"2026-11-25","end":"2026-11-25T11:00:00","allDay":false}""")
+        )
+        assertIs<EventJsonParser.Parsed.Invalid>(
+            EventJsonParser.parse("""{"title":"X","start":"2026-11-25T12:00:00","end":"2026-11-25T11:00:00","allDay":false}""")
+        )
+    }
+
+    @Test
+    fun `accepts partial events leaving missing fields empty for user completion`() {
+        // Missing end time
+        val missingEnd = EventJsonParser.parse(
+            """{"title":"Dentist","start":"2026-11-26T14:30:00","end":"","allDay":false,"location":"Main St Clinic"}"""
+        )
+        assertIs<EventJsonParser.Parsed.Event>(missingEnd)
+        assertEquals("Dentist", missingEnd.draft.title)
+        assertEquals("2026-11-26T14:30:00", missingEnd.draft.startIso)
+        assertEquals("", missingEnd.draft.endIso)
+        assertEquals("Main St Clinic", missingEnd.draft.location)
+        assertTrue(!missingEnd.draft.isValid)
+
+        // Missing title only
+        val missingTitle = EventJsonParser.parse(
+            """{"start":"2026-01-01T09:00:00","end":"2026-01-01T10:00:00"}"""
+        )
+        assertIs<EventJsonParser.Parsed.Event>(missingTitle)
+        assertEquals("", missingTitle.draft.title)
+        assertEquals("2026-01-01T09:00:00", missingTitle.draft.startIso)
+        assertEquals("2026-01-01T10:00:00", missingTitle.draft.endIso)
+        assertTrue(!missingTitle.draft.isValid)
+
+        // Title and location only, no dates
+        val noDates = EventJsonParser.parse(
+            """{"title":"Team-Abendessen","start":"","end":null,"allDay":false,"description":"Abends","location":"Pizzeria Roma"}"""
+        )
+        assertIs<EventJsonParser.Parsed.Event>(noDates)
+        assertEquals("Team-Abendessen", noDates.draft.title)
+        assertEquals("", noDates.draft.startIso)
+        assertEquals("", noDates.draft.endIso)
+        assertEquals("Abends", noDates.draft.description)
+        assertEquals("Pizzeria Roma", noDates.draft.location)
+
+        // Date-only start without end
+        val dateOnlyStart = EventJsonParser.parse(
+            """{"title":"Conference","start":"2026-11-27","end":"","allDay":false}"""
+        )
+        assertIs<EventJsonParser.Parsed.Event>(dateOnlyStart)
+        assertEquals("2026-11-27", dateOnlyStart.draft.startIso)
+        assertEquals("", dateOnlyStart.draft.endIso)
+
+        // Both dates date-only without allDay (times unknown, user completes in form)
+        val bothDateOnly = EventJsonParser.parse(
+            """{"title":"Workshop","start":"2026-11-27","end":"2026-11-28","allDay":false}"""
+        )
+        assertIs<EventJsonParser.Parsed.Event>(bothDateOnly)
+        assertEquals("2026-11-27", bothDateOnly.draft.startIso)
+        assertEquals("2026-11-28", bothDateOnly.draft.endIso)
+        assertTrue(!bothDateOnly.draft.isValid)
     }
 
     @Test
@@ -47,11 +111,24 @@ class EventJsonParserTest {
     }
 
     @Test
-    fun `prompt injects today and timezone for relative dates`() {
+    fun `prompt injects today with weekday and timezone for relative dates`() {
         val prompt = EventJsonParser.buildPrompt("Lunch next Friday", "2026-11-25", "Europe/Berlin")
-        assertTrue(prompt.contains("2026-11-25"))
+        assertTrue(prompt.contains("2026-11-25 (Wednesday)"))
         assertTrue(prompt.contains("Europe/Berlin"))
         assertTrue(prompt.contains("next Friday"))
+    }
+
+    @Test
+    fun `system instruction covers multilingual mixed text and partial events`() {
+        val instruction = EventJsonParser.buildSystemInstruction()
+        assertTrue(instruction.contains("Output ONLY"))
+        assertTrue(instruction.contains("prose"))
+        assertTrue(instruction.contains("mixed"))
+        assertTrue(instruction.contains("language", ignoreCase = true))
+        assertTrue(instruction.contains("Never guess"))
+        assertTrue(instruction.contains("Example:"))
+        assertTrue(instruction.contains("Partial example:"))
+        assertTrue(instruction.contains("""{"noEvent":true}"""))
     }
 
     @Test
