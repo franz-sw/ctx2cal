@@ -24,3 +24,7 @@
 - Edit `module.yaml` / `libs.versions.toml` for deps, not generated `build/` output.
 - Keep `shared/` platform-agnostic: platform APIs only in `src@android/` / `src@ios/`.
 - Verify with the CLI, e.g. `.\kotlin.bat check` / `.\kotlin.bat build` where applicable.
+
+## Agents
+
+- **`fast` (`openrouter/meta/muse-ember`)**: Delegate straightforward, well-scoped tasks that don't require deep reasoning to the `fast` subagent — e.g., boilerplate, mechanical/repetitive edits across files, simple fixes, `module.yaml` / `libs.versions.toml` updates, or running `.\kotlin.bat check` / `.\kotlin.bat build`. Keep complex architecture, non-trivial debugging, and ambiguous design work in the primary agent.
