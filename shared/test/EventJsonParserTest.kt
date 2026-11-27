@@ -168,4 +168,38 @@ class EventJsonParserTest {
         assertTrue(!retry.contains("RAW_END"))
         assertTrue(!retry.contains("ORIG_END"))
     }
+
+    @Test
+    fun `custom system instruction overrides default in buildPromptParts buildPrompt and splitForConversation`() {
+        val custom = "Custom system instruction for testing."
+        val parts = EventJsonParser.buildPromptParts(
+            text = "Team lunch tomorrow 12:00",
+            todayIso = "2026-11-25",
+            timeZoneId = "Europe/Berlin",
+            systemInstruction = custom,
+        )
+        assertEquals(custom, parts.systemInstruction)
+        assertTrue(parts.userPrompt.contains("Team lunch tomorrow 12:00"))
+        assertTrue(parts.userPrompt.contains("2026-11-25"))
+
+        val combined = EventJsonParser.buildPrompt(
+            text = "Team lunch tomorrow 12:00",
+            todayIso = "2026-11-25",
+            timeZoneId = "Europe/Berlin",
+            systemInstruction = custom,
+        )
+        assertTrue(combined.startsWith("$custom\n\n"))
+
+        val split = EventJsonParser.splitForConversation(combined, systemInstruction = custom)
+        assertEquals(custom, split.systemInstruction)
+        assertEquals(parts.userPrompt, split.userPrompt)
+
+        val blankFallback = EventJsonParser.buildPromptParts(
+            text = "Team lunch",
+            todayIso = "2026-11-25",
+            timeZoneId = "UTC",
+            systemInstruction = "   ",
+        )
+        assertEquals(EventJsonParser.buildSystemInstruction(), blankFallback.systemInstruction)
+    }
 }

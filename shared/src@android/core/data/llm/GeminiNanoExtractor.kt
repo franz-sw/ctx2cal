@@ -9,6 +9,7 @@ import de.franzsw.ctx2cal.core.domain.llm.NanoStatusMapper
 import de.franzsw.ctx2cal.core.domain.model.ExtractionResult
 import de.franzsw.ctx2cal.core.domain.model.ModelStatus
 import de.franzsw.ctx2cal.core.domain.ports.EventExtractor
+import de.franzsw.ctx2cal.core.domain.ports.RawPromptResult
 import de.franzsw.ctx2cal.extract.domain.EventJsonParser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
@@ -78,6 +79,54 @@ class GeminiNanoExtractor(
                 if (detail != null) "Gemini Nano couldn't process this text ($detail)."
                 else "Gemini Nano couldn't process this text. Please try again.",
                 isNoModel = false,
+            )
+        } finally {
+            model.close()
+        }
+    }
+
+    suspend fun generateRaw(prompt: String): RawPromptResult {
+        val model = Generation.getClient()
+        try {
+            val status = model.checkStatus()
+            val baseName = if (status == FeatureStatus.DOWNLOADABLE || status == FeatureStatus.DOWNLOADING) {
+                runCatching { model.getBaseModelName() }.getOrNull()
+            } else {
+                null
+            }
+            if (!NanoStatusMapper.isNanoReady(status, baseName)) {
+                return RawPromptResult.Failure("Gemini Nano is not available on this device.")
+            }
+            val startMs = System.currentTimeMillis()
+            val response = withTimeout(attemptTimeoutMs) { model.generateContent(prompt) }
+            val text = response.candidates.firstOrNull()?.text ?: ""
+            return RawPromptResult.Success(
+                output = text,
+                durationMs = (System.currentTimeMillis() - startMs).coerceAtLeast(0L),
+            )
+        } catch (_: TimeoutCancellationException) {
+            return RawPromptResult.Failure("Gemini Nano timed out after ${attemptTimeoutMs / 1000}s. Please retry.")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: GenAiException) {
+            return when (e.errorCode) {
+                GenAiException.ErrorCode.BACKGROUND_USE_BLOCKED ->
+                    RawPromptResult.Failure("Inference runs in the foreground only — keep the app open and retry.")
+                GenAiException.ErrorCode.NOT_AVAILABLE ->
+                    RawPromptResult.Failure("Gemini Nano is not available on this device.")
+                else -> {
+                    val detail = e.message?.takeIf { it.isNotBlank() }
+                    RawPromptResult.Failure(
+                        if (detail != null) "Gemini Nano failed ($detail). Please retry."
+                        else "Gemini Nano failed to run. Please retry."
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            val detail = e.message?.takeIf { it.isNotBlank() }
+            return RawPromptResult.Failure(
+                if (detail != null) "Gemini Nano couldn't process this prompt ($detail)."
+                else "Gemini Nano couldn't process this prompt. Please try again."
             )
         } finally {
             model.close()

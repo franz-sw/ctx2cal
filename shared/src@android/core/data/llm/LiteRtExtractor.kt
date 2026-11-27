@@ -11,6 +11,7 @@ import com.google.ai.edge.litertlm.SamplerConfig
 import com.google.ai.edge.litertlm.ThinkingConfig
 import de.franzsw.ctx2cal.core.domain.model.ExtractionResult
 import de.franzsw.ctx2cal.core.domain.ports.EventExtractor
+import de.franzsw.ctx2cal.core.domain.ports.RawPromptResult
 import de.franzsw.ctx2cal.core.domain.repository.SettingsRepository
 import de.franzsw.ctx2cal.extract.domain.EventJsonParser
 import kotlinx.coroutines.CancellationException
@@ -63,7 +64,7 @@ class LiteRtExtractor(
 
         try {
             coroutineContext.ensureActive()
-            val parts = EventJsonParser.splitForConversation(prompt)
+            val parts = EventJsonParser.splitForConversation(prompt, settings?.customSystemPrompt())
             val conversation = engine.createConversation(
                 ConversationConfig(
                     systemInstruction = Contents.of(parts.systemInstruction),
@@ -107,6 +108,72 @@ class LiteRtExtractor(
             } catch (e: Exception) {
                 val detail = e.message?.takeIf { it.isNotBlank() }
                 ExtractionResult.Failure(
+                    if (detail != null) "On-device inference failed ($detail). Please retry."
+                    else "On-device inference failed. Please retry."
+                )
+            } finally {
+                runCatching { conversation.close() }
+            }
+        } finally {
+            runCatching { engine.close() }
+        }
+    }
+
+    suspend fun generateRaw(
+        modelPath: String,
+        systemPrompt: String,
+        userPrompt: String,
+    ): RawPromptResult = withContext(Dispatchers.IO) {
+        val modelFile = File(modelPath)
+        if (!modelFile.isFile || modelFile.length() <= 0L) {
+            return@withContext RawPromptResult.Failure(
+                "Downloaded model file is missing. Open Setup to re-download it."
+            )
+        }
+
+        val engine = try {
+            createEngineWithFallback(modelPath)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val detail = e.message?.takeIf { it.isNotBlank() }
+            return@withContext RawPromptResult.Failure(
+                if (detail != null) "Could not load the on-device model ($detail). Try re-downloading it in Setup."
+                else "Could not load the on-device model. Try re-downloading it in Setup."
+            )
+        }
+
+        try {
+            coroutineContext.ensureActive()
+            val conversation = engine.createConversation(
+                ConversationConfig(
+                    systemInstruction = if (systemPrompt.isNotBlank()) Contents.of(systemPrompt) else null,
+                    samplerConfig = SamplerConfig(
+                        topK = 1,
+                        topP = 0.95,
+                        temperature = 0.0,
+                        seed = 0,
+                    ),
+                    maxOutputToken = MAX_OUTPUT_TOKENS,
+                    thinkingConfig = ThinkingConfig(enableThinking = false),
+                )
+            )
+            try {
+                val startMs = System.currentTimeMillis()
+                val output = runConversationTurn(conversation, userPrompt)
+                RawPromptResult.Success(
+                    output = output,
+                    durationMs = (System.currentTimeMillis() - startMs).coerceAtLeast(0L),
+                )
+            } catch (_: TimeoutCancellationException) {
+                RawPromptResult.Failure(
+                    "On-device inference timed out after ${attemptTimeoutMs / 1000}s. Try shorter text or a smaller model."
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val detail = e.message?.takeIf { it.isNotBlank() }
+                RawPromptResult.Failure(
                     if (detail != null) "On-device inference failed ($detail). Please retry."
                     else "On-device inference failed. Please retry."
                 )

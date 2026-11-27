@@ -11,6 +11,7 @@ import de.franzsw.ctx2cal.core.domain.ports.DownloadProgress
 import de.franzsw.ctx2cal.core.domain.ports.ModelCatalog
 import de.franzsw.ctx2cal.core.domain.ports.ModelDownloader
 import de.franzsw.ctx2cal.core.domain.repository.SettingsRepository
+import de.franzsw.ctx2cal.extract.domain.EventJsonParser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,6 +32,8 @@ sealed interface ModelSetupUiState {
         val showNoAcceleratedWarning: Boolean = false,
         val activeDownloadModelId: String? = null,
         val pendingDeleteCandidate: ModelCandidate? = null,
+        val systemPrompt: String = EventJsonParser.buildSystemInstruction(),
+        val isDefaultSystemPrompt: Boolean = true,
     ) : ModelSetupUiState
     data class Failed(val message: String) : ModelSetupUiState
 }
@@ -59,6 +62,7 @@ class ModelSetupViewModel(
                 val fallbackCandidate = snapshot.models.firstOrNull { it.isActive }?.candidate
                     ?: catalog.availableCandidate()
                     ?: snapshot.models.firstOrNull()?.candidate
+                val (prompt, isDefault) = resolveSystemPrompt()
                 _state.value = ModelSetupUiState.Ready(
                     status = status,
                     candidate = fallbackCandidate,
@@ -68,6 +72,8 @@ class ModelSetupViewModel(
                     activeModelId = snapshot.activeModelId,
                     showNoAcceleratedWarning = snapshot.showNoAcceleratedWarning,
                     activeDownloadModelId = settings.activeDownloadModelId(),
+                    systemPrompt = prompt,
+                    isDefaultSystemPrompt = isDefault,
                 )
                 val activeDlId = settings.activeDownloadId()
                 if (activeDlId != null && downloadJob?.isActive != true) {
@@ -85,6 +91,37 @@ class ModelSetupViewModel(
             } catch (_: Exception) {
                 _state.value = ModelSetupUiState.Failed("Could not read model status. Please try again.")
             }
+        }
+    }
+
+    fun onSystemPromptChange(prompt: String) {
+        val defaultPrompt = EventJsonParser.buildSystemInstruction()
+        val isDefault = prompt == defaultPrompt
+        settings.setCustomSystemPrompt(if (isDefault) null else prompt)
+        _state.update { current ->
+            if (current is ModelSetupUiState.Ready) {
+                current.copy(systemPrompt = prompt, isDefaultSystemPrompt = isDefault)
+            } else current
+        }
+    }
+
+    fun onResetSystemPrompt() {
+        val defaultPrompt = EventJsonParser.buildSystemInstruction()
+        settings.setCustomSystemPrompt(null)
+        _state.update { current ->
+            if (current is ModelSetupUiState.Ready) {
+                current.copy(systemPrompt = defaultPrompt, isDefaultSystemPrompt = true)
+            } else current
+        }
+    }
+
+    private fun resolveSystemPrompt(): Pair<String, Boolean> {
+        val defaultPrompt = EventJsonParser.buildSystemInstruction()
+        val saved = settings.customSystemPrompt()?.takeIf { it.isNotBlank() }
+        return if (saved != null && saved != defaultPrompt) {
+            saved to false
+        } else {
+            defaultPrompt to true
         }
     }
 
@@ -207,11 +244,14 @@ class ModelSetupViewModel(
                         download = DownloadProgress.Running(receivedBytes = null, totalBytes = candidate.approxSizeBytes),
                     )
                 } else {
+                    val (prompt, isDefault) = resolveSystemPrompt()
                     ModelSetupUiState.Ready(
                         status = initialStatus,
                         candidate = candidate,
                         activeDownloadModelId = candidate.id,
                         download = DownloadProgress.Running(receivedBytes = null, totalBytes = candidate.approxSizeBytes),
+                        systemPrompt = prompt,
+                        isDefaultSystemPrompt = isDefault,
                     )
                 }
             }

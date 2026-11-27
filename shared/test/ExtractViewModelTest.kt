@@ -9,6 +9,8 @@ import de.franzsw.ctx2cal.core.domain.ports.CalendarSharer
 import de.franzsw.ctx2cal.core.domain.ports.EventExtractor
 import de.franzsw.ctx2cal.core.domain.ports.IcsExporter
 import de.franzsw.ctx2cal.core.domain.ports.ModelCatalog
+import de.franzsw.ctx2cal.core.domain.repository.SettingsRepository
+import de.franzsw.ctx2cal.extract.domain.EventJsonParser
 import de.franzsw.ctx2cal.extract.presentation.ExtractUiState
 import de.franzsw.ctx2cal.extract.presentation.ExtractViewModel
 import kotlinx.coroutines.CompletableDeferred
@@ -502,4 +504,49 @@ class ExtractViewModelTest {
         assertEquals(true, err.isNoModel)
         assertEquals("Team sync tomorrow at 10", err.inputText)
     }
+
+    @Test
+    fun `onExtract uses custom system prompt when non-blank and falls back to default when blank or null`() =
+        runTest(dispatcher) {
+            val capturedPrompts = mutableListOf<String>()
+            val extractor = object : EventExtractor {
+                override val backendName = "fake"
+                override suspend fun extract(prompt: String): ExtractionResult {
+                    capturedPrompts += prompt
+                    return ExtractionResult.Success(draft)
+                }
+            }
+            var storedCustom: String? = "My custom system prompt"
+            val settings = object : SettingsRepository {
+                override fun preferredBackend(): String? = null
+                override fun setPreferredBackend(name: String?) = Unit
+                override fun modelPath(): String? = null
+                override fun setModelPath(path: String?) = Unit
+                override fun customSystemPrompt(): String? = storedCustom
+                override fun setCustomSystemPrompt(prompt: String?) {
+                    storedCustom = prompt
+                }
+            }
+
+            val vm = ExtractViewModel(
+                extractor = extractor,
+                sharer = FakeSharer(),
+                exporter = FakeExporter(),
+                settings = settings,
+            )
+
+            vm.onTextChange("Dentist at ten")
+            vm.onExtract()
+            advanceUntilIdle()
+            assertEquals(1, capturedPrompts.size)
+            kotlin.test.assertTrue(capturedPrompts[0].startsWith("My custom system prompt\n\n"))
+
+            // Blank custom prompt falls back to default system instruction
+            storedCustom = "   "
+            vm.onBackToInput()
+            vm.onExtract()
+            advanceUntilIdle()
+            assertEquals(2, capturedPrompts.size)
+            kotlin.test.assertTrue(capturedPrompts[1].startsWith(EventJsonParser.buildSystemInstruction() + "\n\n"))
+        }
 }

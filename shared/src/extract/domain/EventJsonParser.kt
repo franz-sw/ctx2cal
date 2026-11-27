@@ -150,21 +150,31 @@ object EventJsonParser {
         ${boundInput(text)}
         """.trimIndent()
 
-    fun buildPromptParts(text: String, todayIso: String, timeZoneId: String): PromptParts =
+    fun buildPromptParts(
+        text: String,
+        todayIso: String,
+        timeZoneId: String,
+        systemInstruction: String? = null,
+    ): PromptParts =
         PromptParts(
-            systemInstruction = buildSystemInstruction(),
+            systemInstruction = systemInstruction?.takeIf { it.isNotBlank() } ?: buildSystemInstruction(),
             userPrompt = buildUserPrompt(text, todayIso, timeZoneId),
         )
 
     /** Combined prompt for single-string backends (e.g. Gemini Nano). */
-    fun buildPrompt(text: String, todayIso: String, timeZoneId: String): String {
-        val parts = buildPromptParts(text, todayIso, timeZoneId)
+    fun buildPrompt(
+        text: String,
+        todayIso: String,
+        timeZoneId: String,
+        systemInstruction: String? = null,
+    ): String {
+        val parts = buildPromptParts(text, todayIso, timeZoneId, systemInstruction)
         return "${parts.systemInstruction}\n\n${parts.userPrompt}"
     }
 
     /** Splits a combined [buildPrompt] output into separate system/user parts for Conversation sessions. */
-    fun splitForConversation(prompt: String): PromptParts {
-        val system = buildSystemInstruction()
+    fun splitForConversation(prompt: String, systemInstruction: String? = null): PromptParts {
+        val system = systemInstruction?.takeIf { it.isNotBlank() } ?: buildSystemInstruction()
         val prefix = "$system\n\n"
         val user = if (prompt.startsWith(prefix)) prompt.removePrefix(prefix) else prompt
         return PromptParts(

@@ -11,6 +11,8 @@ import de.franzsw.ctx2cal.core.domain.ports.EventExtractor
 import de.franzsw.ctx2cal.core.domain.ports.IcsExporter
 import de.franzsw.ctx2cal.core.domain.ports.ModelCatalog
 import de.franzsw.ctx2cal.core.domain.ports.ModelDownloader
+import de.franzsw.ctx2cal.core.domain.ports.ModelTester
+import de.franzsw.ctx2cal.core.domain.ports.RawPromptResult
 import de.franzsw.ctx2cal.core.domain.repository.SettingsRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -53,12 +55,21 @@ class UnsupportedIcsExporter : IcsExporter {
     override suspend fun export(draft: CalendarEventDraft): String? = null
 }
 
+class UnsupportedModelTester : ModelTester {
+    override suspend fun runPrompt(
+        modelId: String,
+        systemPrompt: String,
+        userPrompt: String,
+    ): RawPromptResult = RawPromptResult.Failure("On-device model testing is not supported on iOS yet.")
+}
+
 class UnsupportedSettings : SettingsRepository {
     private var memory: String? = null
     private var activeId: String? = null
     private var dlId: Long? = null
     private var dlModelId: String? = null
     private var gpuUnsupported: Boolean = false
+    private var customPrompt: String? = null
     override fun preferredBackend(): String? = memory
     override fun setPreferredBackend(name: String?) { memory = name }
     override fun modelPath(): String? = null
@@ -71,4 +82,6 @@ class UnsupportedSettings : SettingsRepository {
     override fun setActiveDownloadModelId(id: String?) { dlModelId = id }
     override fun isGpuUnsupported(): Boolean = gpuUnsupported
     override fun setGpuUnsupported(unsupported: Boolean) { gpuUnsupported = unsupported }
+    override fun customSystemPrompt(): String? = customPrompt
+    override fun setCustomSystemPrompt(prompt: String?) { customPrompt = prompt }
 }

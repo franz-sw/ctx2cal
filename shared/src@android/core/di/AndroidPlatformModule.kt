@@ -4,6 +4,7 @@ import de.franzsw.ctx2cal.core.data.calendar.AndroidCalendarSharer
 import de.franzsw.ctx2cal.core.data.ics.AndroidIcsExporter
 import de.franzsw.ctx2cal.core.data.llm.AndroidDeviceCapabilitiesProvider
 import de.franzsw.ctx2cal.core.data.llm.AndroidModelCatalog
+import de.franzsw.ctx2cal.core.data.llm.AndroidModelTester
 import de.franzsw.ctx2cal.core.data.llm.GeminiNanoExtractor
 import de.franzsw.ctx2cal.core.data.llm.LiteRtExtractor
 import de.franzsw.ctx2cal.core.data.llm.ModelDownloaderAndroid
@@ -17,6 +18,7 @@ import de.franzsw.ctx2cal.core.domain.ports.EventExtractor
 import de.franzsw.ctx2cal.core.domain.ports.IcsExporter
 import de.franzsw.ctx2cal.core.domain.ports.ModelCatalog
 import de.franzsw.ctx2cal.core.domain.ports.ModelDownloader
+import de.franzsw.ctx2cal.core.domain.ports.ModelTester
 import de.franzsw.ctx2cal.core.domain.repository.SettingsRepository
 import de.franzsw.ctx2cal.core.domain.routing.ExtractorRouter
 import de.franzsw.ctx2cal.core.platform.PlatformContextHolder
@@ -65,6 +67,7 @@ actual val platformModule: Module = module {
     }
     // Both backends implement EventExtractor, so bare get() would self-resolve — pin concrete types.
     single<EventExtractor> { ExtractorRouter(get<GeminiNanoExtractor>(), get<LiteRtExtractor>(), get<ModelCatalog>()) }
+    single<ModelTester> { AndroidModelTester(get<GeminiNanoExtractor>(), get<LiteRtExtractor>(), get<ModelDownloader>()) }
     single<CalendarSharer> { AndroidCalendarSharer(androidContext()) }
     single<IcsExporter> { AndroidIcsExporter(androidContext()) }
 }

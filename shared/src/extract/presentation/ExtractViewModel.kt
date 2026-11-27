@@ -10,6 +10,7 @@ import de.franzsw.ctx2cal.core.domain.ports.CalendarSharer
 import de.franzsw.ctx2cal.core.domain.ports.EventExtractor
 import de.franzsw.ctx2cal.core.domain.ports.IcsExporter
 import de.franzsw.ctx2cal.core.domain.ports.ModelCatalog
+import de.franzsw.ctx2cal.core.domain.repository.SettingsRepository
 import de.franzsw.ctx2cal.deviceTimeZoneId
 import de.franzsw.ctx2cal.extract.domain.EventJsonParser
 import de.franzsw.ctx2cal.todayIso
@@ -43,6 +44,7 @@ class ExtractViewModel(
     private val catalog: ModelCatalog? = null,
     private val savedState: SavedStateHandle = SavedStateHandle(),
     private val extractionTimeoutMs: Long = DEFAULT_EXTRACTION_TIMEOUT_MS,
+    private val settings: SettingsRepository? = null,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<ExtractUiState>(ExtractUiState.Input(savedText()))
@@ -132,7 +134,13 @@ class ExtractViewModel(
         val generation = ++extractGeneration
         extractJob = viewModelScope.launch {
             try {
-                val prompt = EventJsonParser.buildPrompt(text, todayIso(), deviceTimeZoneId())
+                val customSystemPrompt = settings?.customSystemPrompt()?.takeIf { it.isNotBlank() }
+                val prompt = EventJsonParser.buildPrompt(
+                    text = text,
+                    todayIso = todayIso(),
+                    timeZoneId = deviceTimeZoneId(),
+                    systemInstruction = customSystemPrompt,
+                )
                 val result = withTimeout(extractionTimeoutMs) {
                     extractor.extract(prompt)
                 }

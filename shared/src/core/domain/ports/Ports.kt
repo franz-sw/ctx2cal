@@ -75,3 +75,17 @@ interface IcsExporter {
     /** Returns the display name of the written file, or null on failure. */
     suspend fun export(draft: CalendarEventDraft): String?
 }
+
+sealed interface RawPromptResult {
+    data class Success(val output: String, val durationMs: Long) : RawPromptResult
+    data class Failure(val reason: String) : RawPromptResult
+}
+
+/** Runs single-turn raw inference against a specific on-device model without JSON validation or fallback. */
+interface ModelTester {
+    suspend fun runPrompt(
+        modelId: String,
+        systemPrompt: String,
+        userPrompt: String,
+    ): RawPromptResult
+}

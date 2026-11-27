@@ -14,4 +14,6 @@ interface SettingsRepository {
     fun setActiveDownloadModelId(id: String?) = Unit
     fun isGpuUnsupported(): Boolean = false
     fun setGpuUnsupported(unsupported: Boolean) = Unit
+    fun customSystemPrompt(): String? = null
+    fun setCustomSystemPrompt(prompt: String?) = Unit
 }

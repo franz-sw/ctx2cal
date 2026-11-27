@@ -10,6 +10,7 @@ import de.franzsw.ctx2cal.core.domain.ports.DownloadProgress
 import de.franzsw.ctx2cal.core.domain.ports.ModelCatalog
 import de.franzsw.ctx2cal.core.domain.ports.ModelDownloader
 import de.franzsw.ctx2cal.core.domain.repository.SettingsRepository
+import de.franzsw.ctx2cal.extract.domain.EventJsonParser
 import de.franzsw.ctx2cal.setup.presentation.ModelSetupUiState
 import de.franzsw.ctx2cal.setup.presentation.ModelSetupViewModel
 import kotlinx.coroutines.Dispatchers
@@ -149,6 +150,7 @@ class ModelSetupViewModelTest {
         var activeDownloadIdValue: Long? = null
         var activeDownloadModelIdValue: String? = null
         var gpuUnsupportedValue: Boolean = false
+        var customSystemPromptValue: String? = null
         var setBackendCalls: Int = 0
         var setModelPathCalls: Int = 0
 
@@ -188,6 +190,12 @@ class ModelSetupViewModelTest {
 
         override fun setGpuUnsupported(unsupported: Boolean) {
             gpuUnsupportedValue = unsupported
+        }
+
+        override fun customSystemPrompt(): String? = customSystemPromptValue
+
+        override fun setCustomSystemPrompt(prompt: String?) {
+            customSystemPromptValue = prompt
         }
     }
 
@@ -493,4 +501,39 @@ class ModelSetupViewModelTest {
         assertEquals(listOf(ModelCatalogEntries.QWEN3_1_7B_INT4.id), downloader.deletedModelIds)
         assertTrue(ModelCatalogEntries.QWEN3_0_6B_INT4.id in downloader.paths)
     }
+
+    @Test
+    fun `system prompt defaults to EventJsonParser default persists edits and resets to default`() =
+        runTest(dispatcher) {
+            val catalog = FakeCatalog(ModelStatus.NanoAvailable(), candidate)
+            val settings = FakeSettings()
+            val vm = vm(catalog, settings = settings)
+            advanceUntilIdle()
+
+            var ready = assertIs<ModelSetupUiState.Ready>(vm.state.value)
+            assertEquals(EventJsonParser.buildSystemInstruction(), ready.systemPrompt)
+            assertTrue(ready.isDefaultSystemPrompt)
+            assertNull(settings.customSystemPromptValue)
+
+            val edited = "Extract event JSON with strict ISO dates."
+            vm.onSystemPromptChange(edited)
+            ready = assertIs<ModelSetupUiState.Ready>(vm.state.value)
+            assertEquals(edited, ready.systemPrompt)
+            assertEquals(false, ready.isDefaultSystemPrompt)
+            assertEquals(edited, settings.customSystemPromptValue)
+
+            // Reopening Setup (new ViewModel with same SettingsRepository) preserves edited prompt.
+            val reopenedVm = vm(catalog, settings = settings)
+            advanceUntilIdle()
+            val reopenedReady = assertIs<ModelSetupUiState.Ready>(reopenedVm.state.value)
+            assertEquals(edited, reopenedReady.systemPrompt)
+            assertEquals(false, reopenedReady.isDefaultSystemPrompt)
+
+            // Reset to default clears custom override and restores default instruction.
+            reopenedVm.onResetSystemPrompt()
+            val resetReady = assertIs<ModelSetupUiState.Ready>(reopenedVm.state.value)
+            assertEquals(EventJsonParser.buildSystemInstruction(), resetReady.systemPrompt)
+            assertTrue(resetReady.isDefaultSystemPrompt)
+            assertNull(settings.customSystemPromptValue)
+        }
 }

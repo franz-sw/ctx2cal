@@ -11,3 +11,9 @@ data object ExtractRoute : Route
 
 @Serializable
 data object ModelSetup : Route
+
+@Serializable
+data class ModelTest(
+    val modelId: String,
+    val modelName: String,
+) : Route

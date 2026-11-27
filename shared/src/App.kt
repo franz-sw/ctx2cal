@@ -26,16 +26,20 @@ import de.franzsw.ctx2cal.core.di.appModule
 import de.franzsw.ctx2cal.core.di.platformModule
 import de.franzsw.ctx2cal.core.navigation.ExtractRoute
 import de.franzsw.ctx2cal.core.navigation.ModelSetup
+import de.franzsw.ctx2cal.core.navigation.ModelTest
 import de.franzsw.ctx2cal.core.presentation.design_system.theme.AppTheme
 import de.franzsw.ctx2cal.extract.presentation.ExtractScreen
 import de.franzsw.ctx2cal.extract.presentation.ExtractUiState
 import de.franzsw.ctx2cal.extract.presentation.ExtractViewModel
 import de.franzsw.ctx2cal.setup.presentation.ModelSetupScreen
 import de.franzsw.ctx2cal.setup.presentation.ModelSetupViewModel
+import de.franzsw.ctx2cal.test_playground.presentation.ModelTestScreen
+import de.franzsw.ctx2cal.test_playground.presentation.ModelTestViewModel
 import kotlinx.serialization.modules.SerializersModule
 import org.jetbrains.compose.reload.DevelopmentEntryPoint
 import org.koin.compose.KoinApplication
 import org.koin.compose.viewmodel.koinViewModel
+import org.koin.core.parameter.parametersOf
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,6 +60,7 @@ fun App(
                         // NavBackStack serializes as NavKey, not Route — register under NavKey.
                         polymorphic(NavKey::class, ExtractRoute::class, ExtractRoute.serializer())
                         polymorphic(NavKey::class, ModelSetup::class, ModelSetup.serializer())
+                        polymorphic(NavKey::class, ModelTest::class, ModelTest.serializer())
                     }
                 }
             }
@@ -73,7 +78,11 @@ fun App(
 
             Scaffold(
                 topBar = {
-                    val title = if (currentRoute is ModelSetup) "Model setup" else "ContextToCalendar"
+                    val title = when (currentRoute) {
+                        is ModelSetup -> "Model setup"
+                        is ModelTest -> "Test · ${currentRoute.modelName}"
+                        else -> "ContextToCalendar"
+                    }
                     TopAppBar(
                         title = { Text(title) },
                         navigationIcon = {
@@ -163,9 +172,30 @@ fun App(
                                 onRequestDeleteModel = vm::onRequestDeleteModel,
                                 onConfirmDeleteModel = vm::onConfirmDeleteModel,
                                 onDismissDeleteDialog = vm::onDismissDeleteDialog,
+                                onSystemPromptChange = vm::onSystemPromptChange,
+                                onResetSystemPrompt = vm::onResetSystemPrompt,
+                                onTestModel = { modelId, modelName ->
+                                    val dest = ModelTest(modelId = modelId, modelName = modelName)
+                                    if (backStack.lastOrNull() != dest) backStack.add(dest)
+                                },
                                 onDone = {
                                     if (backStack.size > 1) backStack.removeLastOrNull()
                                 },
+                            )
+                        }
+                        entry<ModelTest> { route ->
+                            val vm: ModelTestViewModel = koinViewModel(
+                                key = "model-test-${route.modelId}",
+                                parameters = { parametersOf(route.modelId, route.modelName) },
+                            )
+                            val state = vm.state.collectAsState().value
+                            ModelTestScreen(
+                                state = state,
+                                onSystemPromptChange = vm::onSystemPromptChange,
+                                onResetSystemPrompt = vm::onResetSystemPrompt,
+                                onUserPromptChange = vm::onUserPromptChange,
+                                onRun = vm::onRun,
+                                onCancel = vm::onCancel,
                             )
                         }
                     },

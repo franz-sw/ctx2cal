@@ -81,6 +81,14 @@ class AndroidSettingsRepository(context: Context) : SettingsRepository {
         }.apply()
     }
 
+    override fun customSystemPrompt(): String? = prefs.getString(KEY_CUSTOM_SYSTEM_PROMPT, null)
+
+    override fun setCustomSystemPrompt(prompt: String?) {
+        prefs.edit().apply {
+            if (prompt == null) remove(KEY_CUSTOM_SYSTEM_PROMPT) else putString(KEY_CUSTOM_SYSTEM_PROMPT, prompt)
+        }.apply()
+    }
+
     companion object {
         private const val KEY_BACKEND = "preferred_backend"
         private const val KEY_MODEL_PATH = "litertlm_model_path"
@@ -89,5 +97,6 @@ class AndroidSettingsRepository(context: Context) : SettingsRepository {
         private const val KEY_ACTIVE_DOWNLOAD_MODEL_ID = "active_download_model_id"
         private const val KEY_GPU_UNSUPPORTED = "gpu_unsupported"
         private const val KEY_GPU_UNSUPPORTED_VERSION = "gpu_unsupported_version"
+        private const val KEY_CUSTOM_SYSTEM_PROMPT = "custom_system_prompt"
     }
 }

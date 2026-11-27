@@ -15,6 +15,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -46,6 +47,9 @@ fun ModelSetupScreen(
     onRequestDeleteModel: (String) -> Unit = {},
     onConfirmDeleteModel: () -> Unit = {},
     onDismissDeleteDialog: () -> Unit = {},
+    onSystemPromptChange: (String) -> Unit = {},
+    onResetSystemPrompt: () -> Unit = {},
+    onTestModel: (modelId: String, modelName: String) -> Unit = { _, _ -> },
     onDone: () -> Unit = {},
 ) {
     when (state) {
@@ -167,6 +171,11 @@ fun ModelSetupScreen(
                     nanoStatus = state.nanoStatus,
                     isActive = state.activeModelId == ModelCatalogEntries.NANO_MODEL_ID,
                     onSelectNano = { onSelectActiveModel(ModelCatalogEntries.NANO_MODEL_ID) },
+                    onTest = {
+                        val nanoName = (state.nanoStatus as? ModelStatus.NanoAvailable)?.displayName
+                            ?: "Gemini Nano"
+                        onTestModel(ModelCatalogEntries.NANO_MODEL_ID, nanoName)
+                    },
                     onRefresh = onRetry,
                 )
 
@@ -228,6 +237,7 @@ fun ModelSetupScreen(
                             onDownload = { onDownload(entry.candidate.id) },
                             onCancelDownload = onCancelDownload,
                             onSelectActive = { onSelectActiveModel(entry.candidate.id) },
+                            onTest = { onTestModel(entry.candidate.id, entry.candidate.name) },
                             onRequestDelete = { onRequestDeleteModel(entry.candidate.id) },
                         )
                     }
@@ -239,6 +249,13 @@ fun ModelSetupScreen(
                     )
                     TextButton(onClick = onRetry) { Text("Refresh status") }
                 }
+
+                SystemPromptSection(
+                    systemPrompt = state.systemPrompt,
+                    isDefault = state.isDefaultSystemPrompt,
+                    onSystemPromptChange = onSystemPromptChange,
+                    onReset = onResetSystemPrompt,
+                )
             }
         }
     }
@@ -249,22 +266,19 @@ private fun SystemModelSection(
     nanoStatus: ModelStatus,
     isActive: Boolean,
     onSelectNano: () -> Unit,
+    onTest: () -> Unit,
     onRefresh: () -> Unit,
 ) {
     when (nanoStatus) {
         is ModelStatus.NanoAvailable -> {
             CustomElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Column(
-                        modifier = Modifier.weight(1f).padding(end = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -288,9 +302,17 @@ private fun SystemModelSection(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    if (!isActive) {
-                        OutlinedButton(onClick = onSelectNano) {
-                            Text("Use")
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (!isActive) {
+                            OutlinedButton(onClick = onSelectNano) {
+                                Text("Use")
+                            }
+                        }
+                        OutlinedButton(onClick = onTest) {
+                            Text("Test")
                         }
                     }
                 }
@@ -325,6 +347,7 @@ private fun CatalogModelCard(
     onDownload: () -> Unit,
     onCancelDownload: () -> Unit,
     onSelectActive: () -> Unit,
+    onTest: () -> Unit,
     onRequestDelete: () -> Unit,
 ) {
     val candidate = entry.candidate
@@ -433,6 +456,9 @@ private fun CatalogModelCard(
                                 Text("Use")
                             }
                         }
+                        OutlinedButton(onClick = onTest) {
+                            Text("Test")
+                        }
                         TextButton(onClick = onRequestDelete) {
                             Text("Delete", color = MaterialTheme.colorScheme.error)
                         }
@@ -468,6 +494,53 @@ private fun BadgeChip(
             color = contentColor,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
         )
+    }
+}
+
+@Composable
+private fun SystemPromptSection(
+    systemPrompt: String,
+    isDefault: Boolean,
+    onSystemPromptChange: (String) -> Unit,
+    onReset: () -> Unit,
+) {
+    CustomElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Extraction system prompt",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                TextButton(
+                    onClick = onReset,
+                    enabled = !isDefault,
+                ) {
+                    Text("Reset to default")
+                }
+            }
+            Text(
+                text = "Used as the system instruction for calendar event extraction.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = systemPrompt,
+                onValueChange = onSystemPromptChange,
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 4,
+                maxLines = 10,
+                textStyle = MaterialTheme.typography.bodySmall,
+            )
+        }
     }
 }
 
