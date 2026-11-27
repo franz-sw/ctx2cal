@@ -27,4 +27,4 @@
 
 ## Agents
 
-- **`fast` (`openrouter/meta/muse-ember`)**: Delegate straightforward, well-scoped tasks that don't require deep reasoning to the `fast` subagent — e.g., boilerplate, mechanical/repetitive edits across files, simple fixes, `module.yaml` / `libs.versions.toml` updates, or running `.\kotlin.bat check` / `.\kotlin.bat build`. Keep complex architecture, non-trivial debugging, and ambiguous design work in the primary agent.
+- **`fast` (`openrouter/meta/muse-ember`)**: Delegate straightforward (if you are not already muse ember or glm3), well-scoped tasks that don't require deep reasoning to the `fast` subagent — e.g., boilerplate, mechanical/repetitive edits across files, simple fixes, `module.yaml` / `libs.versions.toml` updates, or running `.\kotlin.bat check` / `.\kotlin.bat build`. Keep complex architecture, non-trivial debugging, and ambiguous design work in the primary agent.
