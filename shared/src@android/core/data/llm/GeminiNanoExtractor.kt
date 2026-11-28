@@ -10,15 +10,19 @@ import com.google.mlkit.genai.prompt.Generation
 import com.google.mlkit.genai.prompt.GenerativeModel
 import com.google.mlkit.genai.prompt.SystemInstruction
 import com.google.mlkit.genai.prompt.TextPart
+import de.franzsw.ctx2cal.core.domain.llm.LlmTimeouts
 import de.franzsw.ctx2cal.core.domain.llm.NanoStatusMapper
 import de.franzsw.ctx2cal.core.domain.model.ExtractionResult
 import de.franzsw.ctx2cal.core.domain.model.ModelStatus
 import de.franzsw.ctx2cal.core.domain.ports.EventExtractor
 import de.franzsw.ctx2cal.core.domain.ports.RawPromptResult
+import de.franzsw.ctx2cal.core.domain.ports.RawPromptStreamEvent
 import de.franzsw.ctx2cal.core.domain.repository.SettingsRepository
 import de.franzsw.ctx2cal.extract.domain.EventJsonParser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withTimeout
 
 /**
@@ -149,6 +153,76 @@ class GeminiNanoExtractor(
         }
     }
 
+    fun generateRawStream(systemPrompt: String, userPrompt: String): Flow<RawPromptStreamEvent> = flow {
+        val model = Generation.getClient()
+        try {
+            val status = model.checkStatus()
+            val baseName = if (status == FeatureStatus.DOWNLOADABLE || status == FeatureStatus.DOWNLOADING) {
+                runCatching { model.getBaseModelName() }.getOrNull()
+            } else {
+                null
+            }
+            if (!NanoStatusMapper.isNanoReady(status, baseName)) {
+                emit(RawPromptStreamEvent.Failed("Gemini Nano is not available on this device."))
+                return@flow
+            }
+            val startMs = System.currentTimeMillis()
+            val request = buildRequest(model, systemPrompt, userPrompt)
+            val sb = StringBuilder()
+            var lastFinishReason: Any? = null
+            withTimeout(attemptTimeoutMs) {
+                model.generateContentStream(request).collect { response ->
+                    val candidate = response.candidates.firstOrNull()
+                    val text = candidate?.text.orEmpty()
+                    if (text.isNotEmpty()) {
+                        sb.append(text)
+                        emit(RawPromptStreamEvent.Chunk(text))
+                    }
+                    candidate?.finishReason?.let { lastFinishReason = it }
+                }
+            }
+            if (lastFinishReason != null && lastFinishReason != Candidate.FinishReason.STOP) {
+                Log.w(
+                    "GeminiNanoExtractor",
+                    "Streaming generation stopped with finishReason=$lastFinishReason (outputChars=${sb.length})",
+                )
+            }
+            emit(
+                RawPromptStreamEvent.Completed(
+                    output = sb.toString(),
+                    durationMs = (System.currentTimeMillis() - startMs).coerceAtLeast(0L),
+                )
+            )
+        } catch (_: TimeoutCancellationException) {
+            emit(RawPromptStreamEvent.Failed("Gemini Nano timed out after ${attemptTimeoutMs / 1000}s. Please retry."))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: GenAiException) {
+            val reason = when (e.errorCode) {
+                GenAiException.ErrorCode.BACKGROUND_USE_BLOCKED ->
+                    "Inference runs in the foreground only — keep the app open and retry."
+                GenAiException.ErrorCode.NOT_AVAILABLE ->
+                    "Gemini Nano is not available on this device."
+                else -> {
+                    val detail = e.message?.takeIf { it.isNotBlank() }
+                    if (detail != null) "Gemini Nano failed ($detail). Please retry."
+                    else "Gemini Nano failed to run. Please retry."
+                }
+            }
+            emit(RawPromptStreamEvent.Failed(reason))
+        } catch (e: Exception) {
+            val detail = e.message?.takeIf { it.isNotBlank() }
+            emit(
+                RawPromptStreamEvent.Failed(
+                    if (detail != null) "Gemini Nano couldn't process this prompt ($detail)."
+                    else "Gemini Nano couldn't process this prompt. Please try again."
+                )
+            )
+        } finally {
+            model.close()
+        }
+    }
+
     private suspend fun extractWithRetry(
         generate: suspend (systemPrompt: String, userPrompt: String) -> GenerateContentResponse,
         systemPrompt: String,
@@ -237,7 +311,7 @@ class GeminiNanoExtractor(
     }
 
     companion object {
-        const val DEFAULT_ATTEMPT_TIMEOUT_MS = 45_000L
+        const val DEFAULT_ATTEMPT_TIMEOUT_MS = LlmTimeouts.MODEL_INFERENCE_TIMEOUT_MS
         const val MAX_OUTPUT_TOKENS = 1024
     }
 }

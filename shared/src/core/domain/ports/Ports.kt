@@ -7,6 +7,7 @@ import de.franzsw.ctx2cal.core.domain.model.ModelCandidate
 import de.franzsw.ctx2cal.core.domain.model.ModelCatalogSnapshot
 import de.franzsw.ctx2cal.core.domain.model.ModelStatus
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 
 /** On-device single-event extraction. Implemented per platform with a real LLM backend. */
 interface EventExtractor {
@@ -81,6 +82,13 @@ sealed interface RawPromptResult {
     data class Failure(val reason: String) : RawPromptResult
 }
 
+/** Streaming events emitted during raw single-turn model inference. */
+sealed interface RawPromptStreamEvent {
+    data class Chunk(val text: String) : RawPromptStreamEvent
+    data class Completed(val output: String, val durationMs: Long) : RawPromptStreamEvent
+    data class Failed(val reason: String) : RawPromptStreamEvent
+}
+
 /** Runs single-turn raw inference against a specific on-device model without JSON validation or fallback. */
 interface ModelTester {
     suspend fun runPrompt(
@@ -88,4 +96,20 @@ interface ModelTester {
         systemPrompt: String,
         userPrompt: String,
     ): RawPromptResult
+
+    /**
+     * Streams partial text chunks as the model generates them, ending with [RawPromptStreamEvent.Completed]
+     * or [RawPromptStreamEvent.Failed]. Defaults to emitting the one-shot [runPrompt] result when a backend
+     * does not support streaming.
+     */
+    fun runPromptStream(
+        modelId: String,
+        systemPrompt: String,
+        userPrompt: String,
+    ): Flow<RawPromptStreamEvent> = flow {
+        when (val result = runPrompt(modelId, systemPrompt, userPrompt)) {
+            is RawPromptResult.Success -> emit(RawPromptStreamEvent.Completed(result.output, result.durationMs))
+            is RawPromptResult.Failure -> emit(RawPromptStreamEvent.Failed(result.reason))
+        }
+    }
 }

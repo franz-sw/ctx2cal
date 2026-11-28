@@ -2,8 +2,9 @@ package de.franzsw.ctx2cal.test_playground.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import de.franzsw.ctx2cal.core.domain.llm.LlmTimeouts
 import de.franzsw.ctx2cal.core.domain.ports.ModelTester
-import de.franzsw.ctx2cal.core.domain.ports.RawPromptResult
+import de.franzsw.ctx2cal.core.domain.ports.RawPromptStreamEvent
 import de.franzsw.ctx2cal.core.domain.repository.SettingsRepository
 import de.franzsw.ctx2cal.extract.domain.EventJsonParser
 import kotlinx.coroutines.CancellationException
@@ -79,31 +80,38 @@ class ModelTestViewModel(
         val generation = ++runGeneration
         runJob = viewModelScope.launch {
             try {
-                val result = withTimeout(executionTimeoutMs) {
-                    modelTester.runPrompt(
+                withTimeout(executionTimeoutMs) {
+                    modelTester.runPromptStream(
                         modelId = modelId,
                         systemPrompt = current.systemPrompt,
                         userPrompt = current.userPrompt,
-                    )
+                    ).collect { event ->
+                        if (generation != runGeneration) return@collect
+                        when (event) {
+                            is RawPromptStreamEvent.Chunk -> _state.update { s ->
+                                s.copy(output = (s.output ?: "") + event.text)
+                            }
+                            is RawPromptStreamEvent.Completed -> _state.update {
+                                it.copy(
+                                    isRunning = false,
+                                    output = event.output,
+                                    durationMs = event.durationMs,
+                                    error = null,
+                                )
+                            }
+                            is RawPromptStreamEvent.Failed -> _state.update {
+                                it.copy(
+                                    isRunning = false,
+                                    output = null,
+                                    durationMs = null,
+                                    error = event.reason,
+                                )
+                            }
+                        }
+                    }
                 }
-                if (generation != runGeneration) return@launch
-                when (result) {
-                    is RawPromptResult.Success -> _state.update {
-                        it.copy(
-                            isRunning = false,
-                            output = result.output,
-                            durationMs = result.durationMs,
-                            error = null,
-                        )
-                    }
-                    is RawPromptResult.Failure -> _state.update {
-                        it.copy(
-                            isRunning = false,
-                            output = null,
-                            durationMs = null,
-                            error = result.reason,
-                        )
-                    }
+                if (generation == runGeneration && _state.value.isRunning) {
+                    _state.update { it.copy(isRunning = false) }
                 }
             } catch (_: TimeoutCancellationException) {
                 if (generation == runGeneration) {
@@ -144,6 +152,6 @@ class ModelTestViewModel(
     }
 
     companion object {
-        const val DEFAULT_EXECUTION_TIMEOUT_MS = 65_000L
+        const val DEFAULT_EXECUTION_TIMEOUT_MS = LlmTimeouts.MODEL_INFERENCE_TIMEOUT_MS
     }
 }

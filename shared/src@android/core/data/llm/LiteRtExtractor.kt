@@ -9,15 +9,21 @@ import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.SamplerConfig
 import com.google.ai.edge.litertlm.ThinkingConfig
+import de.franzsw.ctx2cal.core.domain.llm.LlmTimeouts
 import de.franzsw.ctx2cal.core.domain.model.ExtractionResult
 import de.franzsw.ctx2cal.core.domain.ports.EventExtractor
 import de.franzsw.ctx2cal.core.domain.ports.RawPromptResult
+import de.franzsw.ctx2cal.core.domain.ports.RawPromptStreamEvent
 import de.franzsw.ctx2cal.core.domain.repository.SettingsRepository
 import de.franzsw.ctx2cal.extract.domain.EventJsonParser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.io.File
@@ -186,14 +192,104 @@ class LiteRtExtractor(
         }
     }
 
-    private suspend fun runConversationTurn(conversation: Conversation, userMessage: String): String {
+    fun generateRawStream(
+        modelPath: String,
+        systemPrompt: String,
+        userPrompt: String,
+    ): Flow<RawPromptStreamEvent> = flow {
+        val modelFile = File(modelPath)
+        if (!modelFile.isFile || modelFile.length() <= 0L) {
+            emit(
+                RawPromptStreamEvent.Failed(
+                    "Downloaded model file is missing. Open Setup to re-download it."
+                )
+            )
+            return@flow
+        }
+
+        val engine = try {
+            createEngineWithFallback(modelPath)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val detail = e.message?.takeIf { it.isNotBlank() }
+            emit(
+                RawPromptStreamEvent.Failed(
+                    if (detail != null) "Could not load the on-device model ($detail). Try re-downloading it in Setup."
+                    else "Could not load the on-device model. Try re-downloading it in Setup."
+                )
+            )
+            return@flow
+        }
+
+        try {
+            currentCoroutineContext().ensureActive()
+            val conversation = engine.createConversation(
+                ConversationConfig(
+                    systemInstruction = if (systemPrompt.isNotBlank()) Contents.of(systemPrompt) else null,
+                    samplerConfig = SamplerConfig(
+                        topK = 1,
+                        topP = 0.95,
+                        temperature = 0.0,
+                        seed = 0,
+                    ),
+                    maxOutputToken = MAX_OUTPUT_TOKENS,
+                    thinkingConfig = ThinkingConfig(enableThinking = false),
+                )
+            )
+            try {
+                val startMs = System.currentTimeMillis()
+                val output = runConversationTurn(
+                    conversation = conversation,
+                    userMessage = userPrompt,
+                    onChunk = { chunk -> emit(RawPromptStreamEvent.Chunk(chunk)) },
+                )
+                emit(
+                    RawPromptStreamEvent.Completed(
+                        output = output,
+                        durationMs = (System.currentTimeMillis() - startMs).coerceAtLeast(0L),
+                    )
+                )
+            } catch (_: TimeoutCancellationException) {
+                emit(
+                    RawPromptStreamEvent.Failed(
+                        "On-device inference timed out after ${attemptTimeoutMs / 1000}s. Try shorter text or a smaller model."
+                    )
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val detail = e.message?.takeIf { it.isNotBlank() }
+                emit(
+                    RawPromptStreamEvent.Failed(
+                        if (detail != null) "On-device inference failed ($detail). Please retry."
+                        else "On-device inference failed. Please retry."
+                    )
+                )
+            } finally {
+                runCatching { conversation.close() }
+            }
+        } finally {
+            runCatching { engine.close() }
+        }
+    }.flowOn(Dispatchers.IO)
+
+    private suspend fun runConversationTurn(
+        conversation: Conversation,
+        userMessage: String,
+        onChunk: suspend (String) -> Unit = {},
+    ): String {
         val sb = StringBuilder()
         try {
             withTimeout(attemptTimeoutMs) {
                 conversation.sendMessageAsync(userMessage).collect { message ->
                     for (content in message.contents.contents) {
                         if (content is Content.Text) {
-                            sb.append(content.text)
+                            val text = content.text
+                            if (text.isNotEmpty()) {
+                                sb.append(text)
+                                onChunk(text)
+                            }
                         }
                     }
                 }
@@ -241,6 +337,6 @@ class LiteRtExtractor(
         const val MAX_NUM_TOKENS = 4096
         const val MAX_OUTPUT_TOKENS = 1024
         const val CPU_THREAD_COUNT = 4
-        const val DEFAULT_ATTEMPT_TIMEOUT_MS = 60_000L
+        const val DEFAULT_ATTEMPT_TIMEOUT_MS = LlmTimeouts.MODEL_INFERENCE_TIMEOUT_MS
     }
 }

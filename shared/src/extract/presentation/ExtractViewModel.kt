@@ -3,6 +3,7 @@ package de.franzsw.ctx2cal.extract.presentation
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import de.franzsw.ctx2cal.core.domain.llm.LlmTimeouts
 import de.franzsw.ctx2cal.core.domain.model.CalendarEventDraft
 import de.franzsw.ctx2cal.core.domain.model.ExtractionResult
 import de.franzsw.ctx2cal.core.domain.model.ModelStatus
@@ -279,6 +280,6 @@ class ExtractViewModel(
 
     companion object {
         private const val KEY_INPUT_TEXT = "inputText"
-        const val DEFAULT_EXTRACTION_TIMEOUT_MS = 130_000L
+        const val DEFAULT_EXTRACTION_TIMEOUT_MS = LlmTimeouts.EXTRACTION_TIMEOUT_MS
     }
 }
