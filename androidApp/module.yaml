@@ -16,5 +16,5 @@ settings:
     buildToolsVersion: 36.0.0
     versionCode: 1
     versionName: "1.0"
-#    signing: enabled
+    signing: enabled
 
