@@ -13,11 +13,16 @@
 #   build/tasks/_androidApp_buildAndroidRelease/**/outputs/mapping/release/configuration.txt
 #   (mapping.txt / seeds.txt / usage.txt live next to it).
 #
-# Why this file has no active rules:
-# Each dependency was verified against its shipped rules, and R8 reachability
-# covers the rest. Broad keeps would only bloat the DEX and slow startup, so
-# add rules here only for code that reflection/instantiation-by-name loads.
-#
+# Active rules:
+# - firebase-components 16.1.0 (pulled in by ML Kit) ships
+#   `-keep class * implements com.google.firebase.components.ComponentRegistrar`
+#   without `{ <init>(); }`. Under R8 full mode, R8 keeps the class name but
+#   strips CommonComponentRegistrar.<init>(), so MlKitInitProvider fails to
+#   register SharedPrefManager and Generation.getClient() throws NPE in release.
+-keep class * implements com.google.firebase.components.ComponentRegistrar {
+    <init>();
+}
+
 # Consumer rules that already protect this app (do NOT duplicate):
 # - kotlinx-serialization (NavKey routes + CalendarEventDraft): keeps
 #   @Serializable Companion/serializer()/INSTANCE via its META-INF rules.

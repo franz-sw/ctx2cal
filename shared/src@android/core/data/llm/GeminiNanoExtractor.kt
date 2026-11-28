@@ -36,8 +36,9 @@ class GeminiNanoExtractor(
 ) : EventExtractor {
 
     suspend fun nanoStatus(): ModelStatus {
-        val model = Generation.getClient()
+        var model: GenerativeModel? = null
         return try {
+            model = Generation.getClient()
             val status = model.checkStatus()
             val baseName = if (
                 status == FeatureStatus.AVAILABLE ||
@@ -55,13 +56,14 @@ class GeminiNanoExtractor(
             Log.w("GeminiNanoExtractor", "checkStatus failed", e)
             ModelStatus.NanoUnavailable
         } finally {
-            model.close()
+            model?.close()
         }
     }
 
     override suspend fun extract(prompt: String): ExtractionResult {
-        val model = Generation.getClient()
+        var model: GenerativeModel? = null
         try {
+            model = Generation.getClient()
             val status = model.checkStatus()
             val baseName = if (status == FeatureStatus.DOWNLOADABLE || status == FeatureStatus.DOWNLOADING) {
                 runCatching { model.getBaseModelName() }.getOrNull()
@@ -97,7 +99,7 @@ class GeminiNanoExtractor(
                 isNoModel = false,
             )
         } finally {
-            model.close()
+            model?.close()
         }
     }
 
@@ -105,8 +107,9 @@ class GeminiNanoExtractor(
         generateRaw(systemPrompt = "", userPrompt = prompt)
 
     suspend fun generateRaw(systemPrompt: String, userPrompt: String): RawPromptResult {
-        val model = Generation.getClient()
+        var model: GenerativeModel? = null
         try {
+            model = Generation.getClient()
             val status = model.checkStatus()
             val baseName = if (status == FeatureStatus.DOWNLOADABLE || status == FeatureStatus.DOWNLOADING) {
                 runCatching { model.getBaseModelName() }.getOrNull()
@@ -149,13 +152,14 @@ class GeminiNanoExtractor(
                 else "Gemini Nano couldn't process this prompt. Please try again."
             )
         } finally {
-            model.close()
+            model?.close()
         }
     }
 
     fun generateRawStream(systemPrompt: String, userPrompt: String): Flow<RawPromptStreamEvent> = flow {
-        val model = Generation.getClient()
+        var model: GenerativeModel? = null
         try {
+            model = Generation.getClient()
             val status = model.checkStatus()
             val baseName = if (status == FeatureStatus.DOWNLOADABLE || status == FeatureStatus.DOWNLOADING) {
                 runCatching { model.getBaseModelName() }.getOrNull()
@@ -219,7 +223,7 @@ class GeminiNanoExtractor(
                 )
             )
         } finally {
-            model.close()
+            model?.close()
         }
     }
 
