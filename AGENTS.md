@@ -36,3 +36,5 @@ Subagents run on much cheaper models (`openrouter/meta/muse-ember`), so delegati
 - **`review`** (`openrouter/meta/muse-ember`, read-only): Reviewing diffs/files for KMP/Amper rule violations, bugs, Compose pitfalls, and missing tests before committing.
 - **`commit`** (`openrouter/meta/muse-ember`, git-only): Creating commits, pushing branches, and opening pull requests.
 - **Primary agent**: Keep complex architecture, non-trivial debugging, ambiguous design decisions, and integration/review of subagent work in the primary agent.
+
+P.S. Gemini NEON, HYDROGEN etc. are not cheap models
