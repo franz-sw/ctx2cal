@@ -8,12 +8,27 @@ Defines the on-device LLM contract that turns pasted text into one structured ca
 
 ### Requirement: Structured single-event output
 
-The system SHALL prompt the on-device model with the pasted text plus today's date, device timezone, and a single-event JSON example, and SHALL validate the response as one event (title, start, end, all-day, description, location). Validation SHALL reject impossible dates, mixed date/datetime forms, and non-primitive JSON values. A retry SHALL run at most once on validation failure (not on timeout or cancel) with bounded context, else report failure without creating a draft.
+The system SHALL prompt the on-device model with the pasted text plus today's date, device timezone, and single-event JSON examples (including a date-only all-day example), and SHALL validate the response as one event (title, start, end, description, location). Validation SHALL infer `allDay` as true when both `start` and `end` are valid date-only values (`YYYY-MM-DD`) and false otherwise (unless explicitly provided as `true` in JSON), SHALL normalize `T24:00:00` end-of-day timestamps, and SHALL reject impossible dates, mixed date/datetime forms, and non-primitive JSON values. A retry SHALL run at most once on validation failure (not on timeout or cancel) with bounded context, else report failure without creating a draft.
 
 #### Scenario: Relative dates resolve against today
 
 - **WHEN** the text contains a relative date phrase such as "next Friday"
 - **THEN** the extracted event's date reflects the injected today/timezone reference
+
+#### Scenario: Date-only start and end infer all-day
+
+- **WHEN** the model returns date-only `start` and `end` values without an `allDay` field
+- **THEN** the system sets `allDay` to `true` on the extracted draft
+
+#### Scenario: Date-only start with empty end stays partial non-all-day
+
+- **WHEN** the model returns a date-only `start` and an empty `end` without an `allDay` field
+- **THEN** the system sets `allDay` to `false` so the draft remains a partial extraction requiring user completion
+
+#### Scenario: End-of-day 24:00 timestamp is normalized
+
+- **WHEN** the model returns `00:00:00` to `24:00:00` on the same calendar date
+- **THEN** the system normalizes it to an all-day draft for that date instead of rejecting `24:00:00`
 
 #### Scenario: Invalid model output is rejected
 
@@ -109,3 +124,17 @@ When GPU backend initialization fails on a device, the open-model extractor SHAL
 
 - **WHEN** GPU backend initialization throws an error during extraction
 - **THEN** the extractor falls back to CPU execution and skips GPU initialization on subsequent extractions
+
+### Requirement: Custom extraction system prompt
+
+When a custom system prompt is saved in settings, event extraction SHALL use that custom system prompt in place of the default system instruction while continuing to inject today's date, device timezone, and the bounded pasted text as the user prompt. When no custom system prompt is saved or it is blank, extraction SHALL use the default system instruction.
+
+#### Scenario: Extraction uses saved custom system prompt
+
+- **WHEN** the user has saved a non-blank custom system prompt in Model Setup and runs event extraction
+- **THEN** the extractor uses the saved custom system prompt as the system instruction alongside the date/timezone-annotated user prompt
+
+#### Scenario: Extraction uses default system prompt after reset
+
+- **WHEN** no custom system prompt is saved (or after Reset to default) and the user runs event extraction
+- **THEN** the extractor uses the default built-in system instruction

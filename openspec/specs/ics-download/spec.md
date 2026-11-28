@@ -8,7 +8,7 @@ Lets users save the edited event as a portable calendar file in the device Downl
 
 ### Requirement: Download event as ICS file
 
-The system SHALL let the user download the edited event as an RFC 5545 `.ics` file saved into the device Downloads folder, containing one event with title, start, end, description, and location escaped per the standard. The file SHALL use CRLF lines with 75-character folding, all-day events SHALL use date-only `VALUE=DATE` with an exclusive `DTEND`, and the filename SHALL be derived from the event title and date.
+The system SHALL let the user download the edited event as an RFC 5545 `.ics` file saved into the device Downloads folder, containing one event with title, start, end, description, and location escaped per the standard. The file SHALL use CRLF lines with 75-character folding, all-day events SHALL use date-only `VALUE=DATE` with an exclusive `DTEND` derived from the inclusive draft end date (`end + 1 day`), and the filename SHALL be derived from the event title and date.
 
 #### Scenario: Successful download confirmation
 
@@ -24,6 +24,11 @@ The system SHALL let the user download the edited event as an RFC 5545 `.ics` fi
 
 - **WHEN** the user downloads a single-day all-day event
 - **THEN** the ICS `DTEND;VALUE=DATE` is the following day per RFC 5545
+
+#### Scenario: Multi-day all-day inclusive end becomes exclusive DTEND
+
+- **WHEN** the user downloads a multi-day all-day event with inclusive start and end dates
+- **THEN** the ICS `DTEND;VALUE=DATE` is one day after the draft's end date
 
 #### Scenario: Long lines are folded
 
